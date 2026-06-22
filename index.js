@@ -201,6 +201,33 @@ function reviewRequestEmbed(pr, repo, reviewers, senderLogin) {
     .setFooter({ text: repo.full_name });
 }
 
+function reviewSubmittedEmbed(review, pr, repo) {
+  const stateMap = {
+    approved:          '✅ Approved',
+    changes_requested: '🔄 Changes Requested',
+    commented:         '💬 Reviewed',
+  };
+  const colorMap = {
+    approved:          Colors.Green,
+    changes_requested: Colors.Red,
+    commented:         Colors.Blue,
+  };
+  const body = review.body ? review.body.slice(0, 1024) : '*No comment.*';
+  const reviewer = mentionForGithubUser(review.user.login);
+
+  return new EmbedBuilder()
+    .setTitle(stateMap[review.state] ?? `📝 Review ${review.state}`)
+    .setURL(review.html_url)
+    .setColor(colorMap[review.state] ?? Colors.Grey)
+    .setAuthor({ name: review.user.login, url: `https://github.com/${review.user.login}`, iconURL: review.user.avatar_url })
+    .addFields(
+      { name: 'Pull Request', value: `[#${pr.number} — ${pr.title}](${pr.html_url})` },
+      { name: 'Reviewer', value: reviewer, inline: true },
+      { name: 'Review', value: body },
+    )
+    .setFooter({ text: repo.full_name });
+}
+
 // ── Slash command handler ─────────────────────────────────────────────────────
 
 client.on('interactionCreate', async interaction => {
@@ -394,6 +421,59 @@ app.post('/ghwebhook', async (req, res) => {
           savePrMap();
         }
       }
+
+      } else if (action === 'assigned') {
+        const assignee = pr.assignee ?? payload.assignee;
+        if (!assignee) return;
+        const embed = new EmbedBuilder()
+          .setTitle('👤 Assigned')
+          .setURL(pr.html_url)
+          .setColor(Colors.Blurple)
+          .addFields(
+            { name: 'Pull Request', value: `[#${pr.number} — ${pr.title}](${pr.html_url})` },
+            { name: 'Assignee', value: mentionForGithubUser(assignee.login), inline: true },
+          )
+          .setFooter({ text: repo.full_name });
+        const pings = [];
+        const ping = mentionForGithubUser(assignee.login);
+        if (ping.startsWith('<@')) pings.push(ping);
+
+        const stored = prMessageMap.get(pr.node_id);
+        const target = stored?.threadId
+          ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
+          : channel;
+        await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
+
+      } else if (action === 'edited') {
+        const stored = prMessageMap.get(pr.node_id);
+        if (stored?.messageId) {
+          const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+          if (originalMsg) {
+            const content = originalMsg.content;
+            if (!content.startsWith('[Closed]') && !content.startsWith('[Merged]')) {
+              const updatedEmbed = prEmbed(pr, repo, pr.draft ? 'converted_to_draft' : 'opened');
+              await originalMsg.edit({ embeds: [updatedEmbed] });
+            }
+          }
+        }
+      }
+
+    } else if (event === 'pull_request_review') {
+      if (payload.action !== 'submitted') return;
+      const { review, pull_request: pr, repository: repo } = payload;
+      const embed = reviewSubmittedEmbed(review, pr, repo);
+
+      const pings = [];
+      if (review.state === 'changes_requested') {
+        const authorPing = mentionForGithubUser(pr.user.login);
+        if (authorPing.startsWith('<@')) pings.push(authorPing);
+      }
+
+      const stored = prMessageMap.get(pr.node_id);
+      const target = stored?.threadId
+        ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
+        : channel;
+      await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
     } else if (event === 'pull_request_review_comment') {
       if (payload.action !== 'created') return;
