@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, Colors, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, Colors, REST, Routes, SlashCommandBuilder, MessageFlags } = require('discord.js');
 const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -256,7 +256,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (process.env.CONFIG_ROLE && !interaction.member.roles.cache.has(process.env.CONFIG_ROLE)) {
-    await interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    await interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -267,7 +267,7 @@ client.on('interactionCreate', async interaction => {
     const githubUsername = interaction.options.getString('github_username').trim();
     const existing = userMap[discordUser.id] ?? [];
     if (existing.some(n => n.toLowerCase() === githubUsername.toLowerCase())) {
-      await interaction.reply({ content: `**${githubUsername}** is already mapped to <@${discordUser.id}>.`, ephemeral: true });
+      await interaction.reply({ content: `**${githubUsername}** is already mapped to <@${discordUser.id}>.`, flags: MessageFlags.Ephemeral });
       return;
     }
     userMap[discordUser.id] = [...existing, githubUsername];
@@ -284,13 +284,13 @@ client.on('interactionCreate', async interaction => {
     const githubUsername = interaction.options.getString('github_username')?.trim();
     const existing = userMap[discordUser.id];
     if (!existing || existing.length === 0) {
-      await interaction.reply({ content: 'No mapping found for that user.', ephemeral: true });
+      await interaction.reply({ content: 'No mapping found for that user.', flags: MessageFlags.Ephemeral });
       return;
     }
     if (githubUsername) {
       const updated = existing.filter(n => n.toLowerCase() !== githubUsername.toLowerCase());
       if (updated.length === existing.length) {
-        await interaction.reply({ content: `**${githubUsername}** was not mapped to <@${discordUser.id}>.`, ephemeral: true });
+        await interaction.reply({ content: `**${githubUsername}** was not mapped to <@${discordUser.id}>.`, flags: MessageFlags.Ephemeral });
         return;
       }
       if (updated.length === 0) {
@@ -317,7 +317,7 @@ client.on('interactionCreate', async interaction => {
   } else if (interaction.commandName === 'listmappings') {
     const entries = Object.entries(userMap);
     if (entries.length === 0) {
-      await interaction.reply({ content: 'No mappings configured yet.', ephemeral: true });
+      await interaction.reply({ content: 'No mappings configured yet.', flags: MessageFlags.Ephemeral });
       return;
     }
     const lines = entries.map(([discordId, names]) => {
