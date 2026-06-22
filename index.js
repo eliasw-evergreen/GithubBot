@@ -420,7 +420,6 @@ app.post('/ghwebhook', async (req, res) => {
           prMessageMap.set(pr.node_id, { messageId: closeMsgResult.id, threadId: null });
           savePrMap();
         }
-      }
 
       } else if (action === 'assigned') {
         const assignee = pr.assignee ?? payload.assignee;
@@ -457,7 +456,6 @@ app.post('/ghwebhook', async (req, res) => {
           }
         }
       }
-
     } else if (event === 'pull_request_review') {
       if (payload.action !== 'submitted') return;
       const { review, pull_request: pr, repository: repo } = payload;
