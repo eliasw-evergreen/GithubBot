@@ -244,8 +244,8 @@ app.post('/ghwebhook', async (req, res) => {
 
   const event = req.headers['x-github-event'];
   const payload = req.body;
+  console.log(`[${event}] Received webhook (action: ${payload?.action ?? 'unknown'})`);
   res.sendStatus(200);
-  console.log(`[${event}] Received webhook (action: ${payload.action})`);
 
   const channel = client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
   if (!channel) return;
