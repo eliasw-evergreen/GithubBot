@@ -9,7 +9,22 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const app = express();
 
 // Map of PR node_id -> { messageId, threadId }, so comments can reply in a thread
-const prMessageMap = new Map();
+const PR_MAP_FILE = path.join(__dirname, 'prmap.json');
+
+function loadPrMap() {
+  try {
+    const data = JSON.parse(fs.readFileSync(PR_MAP_FILE, 'utf8'));
+    return new Map(Object.entries(data));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePrMap() {
+  fs.writeFileSync(PR_MAP_FILE, JSON.stringify(Object.fromEntries(prMessageMap), null, 2));
+}
+
+const prMessageMap = loadPrMap();
 
 // ── User map (Discord ID -> GitHub username) ──────────────────────────────────
 
@@ -276,7 +291,7 @@ app.post('/ghwebhook', async (req, res) => {
 
         const stored = prMessageMap.get(pr.node_id);
 
-        if (action === 'reopened' && stored) {
+        if (action === 'reopened' && stored?.messageId) {
           const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
           if (originalMsg) {
             await originalMsg.edit({ content: `${rolePing}${mention} opened a PR` });
@@ -301,6 +316,7 @@ app.post('/ghwebhook', async (req, res) => {
             autoArchiveDuration: 10080,
           });
           prMessageMap.set(pr.node_id, { messageId: msg.id, threadId: thread.id });
+          savePrMap();
         }
 
       } else if (action === 'closed') {
@@ -329,6 +345,8 @@ app.post('/ghwebhook', async (req, res) => {
           }
         } else {
           await channel.send({ embeds: [embed] });
+          prMessageMap.set(pr.node_id, { messageId: null, threadId: null });
+          savePrMap();
         }
       }
 
