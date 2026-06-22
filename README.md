@@ -126,6 +126,10 @@ Copy `.env.example` to `.env` and fill in all values:
 | `DISCORD_CHANNEL_ID` | ID of the channel to post PR notifications in |
 | `GITHUB_WEBHOOK_SECRET` | Secret you set when creating the GitHub webhook |
 | `PORT` | Port for the Express server (default: `3000`) |
+| `MERGED_REACTION` | Discord emoji ID to react on merged PRs |
+| `COMMENT_REACTION` | Discord emoji ID to react on new comments |
+| `CLOSED_REACTION` | Discord emoji ID or unicode to react on closed PRs |
+| `PR_PING_ROLE` | Discord role ID to ping when a new PR is opened |
 
 ---
 
