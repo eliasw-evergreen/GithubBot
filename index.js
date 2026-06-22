@@ -185,6 +185,28 @@ function commentEmbed(comment, pr, repo, isReview) {
   return embed;
 }
 
+function deletedCommentEmbed(comment, pr, repo, isReview) {
+  const body = comment.body ? comment.body.slice(0, 1024) : '*No content.*';
+  const author = mentionForGithubUser(comment.user.login);
+
+  const embed = new EmbedBuilder()
+    .setTitle(isReview ? '🗑️ Review Comment Removed' : '🗑️ PR Comment Removed')
+    .setURL(pr.html_url)
+    .setColor(Colors.Red)
+    .setAuthor({ name: comment.user.login, url: `https://github.com/${comment.user.login}`, iconURL: comment.user.avatar_url })
+    .addFields(
+      { name: 'Author', value: author, inline: true },
+      { name: 'Content', value: body },
+    )
+    .setFooter({ text: repo.full_name });
+
+  if (isReview && comment.path) {
+    embed.addFields({ name: 'Location', value: `\`${comment.path}\` line ${comment.line ?? comment.original_line ?? '?'}`, inline: true });
+  }
+
+  return embed;
+}
+
 function reviewRequestEmbed(pr, repo, reviewers, senderLogin) {
   const reviewerNames = reviewers.map(r => `**${r.login}**`).join(', ');
   const requester = mentionForGithubUser(senderLogin);
@@ -474,9 +496,12 @@ app.post('/ghwebhook', async (req, res) => {
       await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
     } else if (event === 'pull_request_review_comment') {
-      if (payload.action !== 'created') return;
+      if (!['created', 'deleted'].includes(payload.action)) return;
       const { comment, pull_request: pr, repository: repo } = payload;
-      const embed = commentEmbed(comment, pr, repo, true);
+      const isDeleted = payload.action === 'deleted';
+      const embed = isDeleted
+        ? deletedCommentEmbed(comment, pr, repo, true)
+        : commentEmbed(comment, pr, repo, true);
 
       const mentionedPings = extractGithubMentions(comment.body);
 
@@ -486,15 +511,18 @@ app.post('/ghwebhook', async (req, res) => {
         : channel;
       await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
-      if (stored && process.env.COMMENT_REACTION) {
+      if (stored && !isDeleted && process.env.COMMENT_REACTION) {
         const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
         if (originalMsg) await originalMsg.react(process.env.COMMENT_REACTION);
       }
 
     } else if (event === 'issue_comment') {
-      if (payload.action !== 'created' || !payload.issue.pull_request) return;
+      if ((!['created', 'deleted'].includes(payload.action)) || !payload.issue.pull_request) return;
       const { comment, issue, repository: repo } = payload;
-      const embed = commentEmbed(comment, issue, repo, false);
+      const isDeleted = payload.action === 'deleted';
+      const embed = isDeleted
+        ? deletedCommentEmbed(comment, issue, repo, false)
+        : commentEmbed(comment, issue, repo, false);
 
       const mentionedPings = extractGithubMentions(comment.body);
 
@@ -504,7 +532,7 @@ app.post('/ghwebhook', async (req, res) => {
         : channel;
       await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
-      if (stored && process.env.COMMENT_REACTION) {
+      if (stored && !isDeleted && process.env.COMMENT_REACTION) {
         const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
         if (originalMsg) await originalMsg.react(process.env.COMMENT_REACTION);
       }
