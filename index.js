@@ -27,9 +27,10 @@ function saveUserMap(map) {
   fs.writeFileSync(USER_MAP_FILE, JSON.stringify(map, null, 2));
 }
 
-// githubToDiscord: reverse lookup { githubLogin -> discordId }
+// githubToDiscord: reverse lookup — values are arrays of github usernames
 function githubToDiscord(userMap, githubLogin) {
-  return Object.entries(userMap).find(([, gh]) => gh.toLowerCase() === githubLogin.toLowerCase())?.[0] ?? null;
+  const login = githubLogin.toLowerCase();
+  return Object.entries(userMap).find(([, names]) => names.some(n => n.toLowerCase() === login))?.[0] ?? null;
 }
 
 // ── Slash command registration ────────────────────────────────────────────────
@@ -37,14 +38,15 @@ function githubToDiscord(userMap, githubLogin) {
 const commands = [
   new SlashCommandBuilder()
     .setName('mapuser')
-    .setDescription('Map a Discord user to their GitHub username')
+    .setDescription('Add a GitHub username mapping for a Discord user (multiple allowed)')
     .addUserOption(o => o.setName('discord_user').setDescription('The Discord user').setRequired(true))
     .addStringOption(o => o.setName('github_username').setDescription('Their GitHub username').setRequired(true)),
 
   new SlashCommandBuilder()
     .setName('unmapuser')
-    .setDescription('Remove the GitHub mapping for a Discord user')
-    .addUserOption(o => o.setName('discord_user').setDescription('The Discord user').setRequired(true)),
+    .setDescription('Remove a GitHub username from a Discord user (omit github_username to remove all)')
+    .addUserOption(o => o.setName('discord_user').setDescription('The Discord user').setRequired(true))
+    .addStringOption(o => o.setName('github_username').setDescription('Specific GitHub username to remove (leave blank to remove all)').setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('listmappings')
@@ -163,27 +165,53 @@ client.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'mapuser') {
     const discordUser = interaction.options.getUser('discord_user');
     const githubUsername = interaction.options.getString('github_username').trim();
-    userMap[discordUser.id] = githubUsername;
+    const existing = userMap[discordUser.id] ?? [];
+    if (existing.some(n => n.toLowerCase() === githubUsername.toLowerCase())) {
+      await interaction.reply({ content: `**${githubUsername}** is already mapped to <@${discordUser.id}>.`, ephemeral: true });
+      return;
+    }
+    userMap[discordUser.id] = [...existing, githubUsername];
     saveUserMap(userMap);
+    const all = userMap[discordUser.id].map(n => `**[${n}](https://github.com/${n})**`).join(', ');
     await interaction.reply({
       embeds: [new EmbedBuilder()
         .setColor(Colors.Green)
-        .setDescription(`Mapped <@${discordUser.id}> → **[${githubUsername}](https://github.com/${githubUsername})**`)],
+        .setDescription(`<@${discordUser.id}> is now mapped to: ${all}`)],
     });
 
   } else if (interaction.commandName === 'unmapuser') {
     const discordUser = interaction.options.getUser('discord_user');
-    if (userMap[discordUser.id]) {
-      const old = userMap[discordUser.id];
+    const githubUsername = interaction.options.getString('github_username')?.trim();
+    const existing = userMap[discordUser.id];
+    if (!existing || existing.length === 0) {
+      await interaction.reply({ content: 'No mapping found for that user.', ephemeral: true });
+      return;
+    }
+    if (githubUsername) {
+      const updated = existing.filter(n => n.toLowerCase() !== githubUsername.toLowerCase());
+      if (updated.length === existing.length) {
+        await interaction.reply({ content: `**${githubUsername}** was not mapped to <@${discordUser.id}>.`, ephemeral: true });
+        return;
+      }
+      if (updated.length === 0) {
+        delete userMap[discordUser.id];
+      } else {
+        userMap[discordUser.id] = updated;
+      }
+      saveUserMap(userMap);
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(Colors.Orange)
+          .setDescription(`Removed **${githubUsername}** from <@${discordUser.id}>'s mappings`)],
+      });
+    } else {
       delete userMap[discordUser.id];
       saveUserMap(userMap);
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(Colors.Orange)
-          .setDescription(`Removed mapping for <@${discordUser.id}> (was **${old}**)`)],
+          .setDescription(`Removed all GitHub mappings for <@${discordUser.id}>`)],
       });
-    } else {
-      await interaction.reply({ content: 'No mapping found for that user.', ephemeral: true });
     }
 
   } else if (interaction.commandName === 'listmappings') {
@@ -192,7 +220,10 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ content: 'No mappings configured yet.', ephemeral: true });
       return;
     }
-    const lines = entries.map(([discordId, gh]) => `<@${discordId}> → **[${gh}](https://github.com/${gh})**`);
+    const lines = entries.map(([discordId, names]) => {
+      const ghLinks = names.map(n => `**[${n}](https://github.com/${n})**`).join(', ');
+      return `<@${discordId}> → ${ghLinks}`;
+    });
     await interaction.reply({
       embeds: [new EmbedBuilder()
         .setTitle('Discord ↔ GitHub Mappings')
