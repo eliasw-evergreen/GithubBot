@@ -255,6 +255,11 @@ function reviewSubmittedEmbed(review, pr, repo) {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  if (process.env.CONFIG_ROLE && !interaction.member.roles.cache.has(process.env.CONFIG_ROLE)) {
+    await interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    return;
+  }
+
   const userMap = loadUserMap();
 
   if (interaction.commandName === 'mapuser') {
