@@ -306,7 +306,6 @@ app.post('/ghwebhook', async (req, res) => {
         } else {
           await channel.send({ embeds: [embed] });
         }
-        prMessageMap.delete(pr.node_id);
       }
 
     } else if (event === 'pull_request_review_comment') {
