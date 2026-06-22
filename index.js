@@ -270,6 +270,14 @@ app.post('/webhook', async (req, res) => {
 
         const stored = prMessageMap.get(pr.node_id);
         if (stored) {
+          const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+          if (originalMsg) {
+            if (pr.merged && process.env.MERGED_REACTION) {
+              await originalMsg.react(process.env.MERGED_REACTION);
+            } else if (!pr.merged && process.env.CLOSED_REACTION) {
+              await originalMsg.react(process.env.CLOSED_REACTION);
+            }
+          }
           const thread = channel.threads.cache.get(stored.threadId)
             ?? await channel.threads.fetch(stored.threadId).catch(() => null);
           if (thread) {
@@ -295,6 +303,11 @@ app.post('/webhook', async (req, res) => {
         : channel;
       await target.send({ embeds: [embed] });
 
+      if (stored && process.env.COMMENT_REACTION) {
+        const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+        if (originalMsg) await originalMsg.react(process.env.COMMENT_REACTION);
+      }
+
     } else if (event === 'issue_comment') {
       if (payload.action !== 'created' || !payload.issue.pull_request) return;
       const { comment, issue, repository: repo } = payload;
@@ -305,6 +318,11 @@ app.post('/webhook', async (req, res) => {
         ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
         : channel;
       await target.send({ embeds: [embed] });
+
+      if (stored && process.env.COMMENT_REACTION) {
+        const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+        if (originalMsg) await originalMsg.react(process.env.COMMENT_REACTION);
+      }
     }
   } catch (err) {
     console.error(`[${event}] Error:`, err);
