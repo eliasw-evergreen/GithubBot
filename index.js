@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent] });
 const app = express();
 
 // Map of PR node_id -> { messageId, threadId }, so comments can reply in a thread
@@ -24,21 +24,39 @@ function savePrMap() {
   fs.writeFileSync(PR_MAP_FILE, JSON.stringify(Object.fromEntries(prMessageMap), null, 2));
 }
 
+function prunePrMap() {
+  const days = parseInt(process.env.PRUNE_DAYS, 10);
+  if (!days || days <= 0) return;
+  const cutoff = Date.now() - days * 86400000;
+  let changed = false;
+  for (const [nodeId, entry] of prMessageMap) {
+    if (entry.closedAt && entry.closedAt < cutoff) {
+      prMessageMap.delete(nodeId);
+      changed = true;
+    }
+  }
+  if (changed) savePrMap();
+}
+
 const prMessageMap = loadPrMap();
 
 // ── User map (Discord ID -> GitHub username) ──────────────────────────────────
 
 const USER_MAP_FILE = path.join(__dirname, 'usermap.json');
+let userMapCache = null;
 
 function loadUserMap() {
+  if (userMapCache) return userMapCache;
   try {
-    return JSON.parse(fs.readFileSync(USER_MAP_FILE, 'utf8'));
+    userMapCache = JSON.parse(fs.readFileSync(USER_MAP_FILE, 'utf8'));
   } catch {
-    return {};
+    userMapCache = {};
   }
+  return userMapCache;
 }
 
 function saveUserMap(map) {
+  userMapCache = map;
   fs.writeFileSync(USER_MAP_FILE, JSON.stringify(map, null, 2));
 }
 
@@ -99,6 +117,13 @@ function mentionForGithubUser(githubLogin) {
   return discordId ? `<@${discordId}>` : `**${githubLogin}**`;
 }
 
+async function getTargetChannel(channel, stored) {
+  if (!stored?.threadId) return channel;
+  return channel.threads.cache.get(stored.threadId)
+    ?? await channel.threads.fetch(stored.threadId).catch(() => null)
+    ?? channel;
+}
+
 function prEmbed(pr, repo, action) {
   const colorMap = {
     opened:              Colors.Green,
@@ -133,7 +158,8 @@ function prEmbed(pr, repo, action) {
       { name: 'Branches', value: `\`${pr.head.ref}\` → \`${pr.base.ref}\``, inline: true },
       { name: 'Changes', value: `+${pr.additions ?? 0} / -${pr.deletions ?? 0} in ${pr.changed_files ?? 0} file(s)`, inline: true },
     )
-    .setFooter({ text: repo.full_name });
+    .setFooter({ text: repo.full_name })
+    .setTimestamp();
 
   if (['opened', 'reopened', 'ready_for_review'].includes(action)) {
     embed.addFields({ name: 'Description', value: description });
@@ -176,7 +202,8 @@ function commentEmbed(comment, pr, repo, isReview) {
       { name: 'Link', value: `[View comment](${comment.html_url})`, inline: true },
       { name: 'Message', value: body },
     )
-    .setFooter({ text: repo.full_name });
+    .setFooter({ text: repo.full_name })
+    .setTimestamp();
 
   if (isReview && comment.path) {
     embed.addFields({ name: 'Location', value: `\`${comment.path}\` line ${comment.line ?? comment.original_line ?? '?'}`, inline: true });
@@ -198,7 +225,8 @@ function deletedCommentEmbed(comment, pr, repo, isReview) {
       { name: 'Author', value: author, inline: true },
       { name: 'Content', value: body },
     )
-    .setFooter({ text: repo.full_name });
+    .setFooter({ text: repo.full_name })
+    .setTimestamp();
 
   if (isReview && comment.path) {
     embed.addFields({ name: 'Location', value: `\`${comment.path}\` line ${comment.line ?? comment.original_line ?? '?'}`, inline: true });
@@ -220,7 +248,8 @@ function reviewRequestEmbed(pr, repo, reviewers, senderLogin) {
       { name: 'Requested by', value: requester, inline: true },
       { name: 'Reviewers', value: reviewerNames, inline: true },
     )
-    .setFooter({ text: repo.full_name });
+    .setFooter({ text: repo.full_name })
+    .setTimestamp();
 }
 
 function reviewSubmittedEmbed(review, pr, repo) {
@@ -247,7 +276,8 @@ function reviewSubmittedEmbed(review, pr, repo) {
       { name: 'Reviewer', value: reviewer, inline: true },
       { name: 'Review', value: body },
     )
-    .setFooter({ text: repo.full_name });
+    .setFooter({ text: repo.full_name })
+    .setTimestamp();
 }
 
 // ── Slash command handler ─────────────────────────────────────────────────────
@@ -276,7 +306,8 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({
       embeds: [new EmbedBuilder()
         .setColor(Colors.Green)
-        .setDescription(`<@${discordUser.id}> is now mapped to: ${all}`)],
+        .setDescription(`<@${discordUser.id}> is now mapped to: ${all}`)
+        .setTimestamp()],
     });
 
   } else if (interaction.commandName === 'unmapuser') {
@@ -302,7 +333,8 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(Colors.Orange)
-          .setDescription(`Removed **${githubUsername}** from <@${discordUser.id}>'s mappings`)],
+          .setDescription(`Removed **${githubUsername}** from <@${discordUser.id}>'s mappings`)
+          .setTimestamp()],
       });
     } else {
       delete userMap[discordUser.id];
@@ -310,7 +342,8 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(Colors.Orange)
-          .setDescription(`Removed all GitHub mappings for <@${discordUser.id}>`)],
+          .setDescription(`Removed all GitHub mappings for <@${discordUser.id}>`)
+          .setTimestamp()],
       });
     }
 
@@ -327,8 +360,9 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({
       embeds: [new EmbedBuilder()
         .setTitle('Discord ↔ GitHub Mappings')
-        .setColor(Colors.Blurple)
-        .setDescription(lines.join('\n'))],
+        .setColor(0x5865F2)
+        .setDescription(lines.join('\n'))
+        .setTimestamp()],
     });
   }
 });
@@ -350,6 +384,8 @@ app.post('/ghwebhook', async (req, res) => {
   const channel = client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
   if (!channel) return;
 
+  prunePrMap();
+
   try {
     if (event === 'pull_request') {
       const { action, pull_request: pr, repository: repo } = payload;
@@ -362,6 +398,10 @@ app.post('/ghwebhook', async (req, res) => {
         const stored = prMessageMap.get(pr.node_id);
 
         if (action === 'reopened' && stored?.messageId) {
+          if (stored.closedAt) {
+            delete stored.closedAt;
+            savePrMap();
+          }
           const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
           if (originalMsg) {
             await originalMsg.edit({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
@@ -385,9 +425,7 @@ app.post('/ghwebhook', async (req, res) => {
               savePrMap();
             }
           }
-          const thread = stored.threadId
-            ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-            : channel;
+          const thread = await getTargetChannel(channel, stored);
           await thread.send({ content: rolePing || undefined, embeds: [embed] });
         } else if ((action === 'ready_for_review' || action === 'converted_to_draft') && stored?.messageId) {
           const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
@@ -406,13 +444,11 @@ app.post('/ghwebhook', async (req, res) => {
         const reviewers = pr.requested_reviewers ?? [];
         if (reviewers.length === 0) return;
 
-        const embed = reviewRequestEmbed(pr, repo, reviewers, payload.sender?.login);
+        const embed = reviewRequestEmbed(pr, repo, reviewers, payload.sender?.login ?? 'unknown');
         const pings = reviewers.map(r => mentionForGithubUser(r.login)).filter(p => p.startsWith('<@'));
 
         const stored = prMessageMap.get(pr.node_id);
-        const target = stored?.threadId
-          ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-          : channel;
+        const target = await getTargetChannel(channel, stored);
         await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
       } else if (action === 'closed') {
@@ -442,9 +478,11 @@ app.post('/ghwebhook', async (req, res) => {
           } else if (!editedOriginal) {
             await channel.send({ embeds: [embed] });
           }
+          stored.closedAt = Date.now();
+          savePrMap();
         } else {
           const closeMsgResult = await channel.send({ embeds: [embed] });
-          prMessageMap.set(pr.node_id, { messageId: closeMsgResult.id, threadId: null });
+          prMessageMap.set(pr.node_id, { messageId: closeMsgResult.id, threadId: null, closedAt: Date.now() });
           savePrMap();
         }
 
@@ -454,20 +492,19 @@ app.post('/ghwebhook', async (req, res) => {
         const embed = new EmbedBuilder()
           .setTitle('👤 Assigned')
           .setURL(pr.html_url)
-          .setColor(Colors.Blurple)
+          .setColor(0x5865F2)
           .addFields(
             { name: 'Pull Request', value: `[#${pr.number} — ${pr.title}](${pr.html_url})` },
             { name: 'Assignee', value: mentionForGithubUser(assignee.login), inline: true },
           )
-          .setFooter({ text: repo.full_name });
+          .setFooter({ text: repo.full_name })
+          .setTimestamp();
         const pings = [];
         const ping = mentionForGithubUser(assignee.login);
         if (ping.startsWith('<@')) pings.push(ping);
 
         const stored = prMessageMap.get(pr.node_id);
-        const target = stored?.threadId
-          ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-          : channel;
+        const target = await getTargetChannel(channel, stored);
         await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
       } else if (action === 'edited') {
@@ -495,9 +532,7 @@ app.post('/ghwebhook', async (req, res) => {
       }
 
       const stored = prMessageMap.get(pr.node_id);
-      const target = stored?.threadId
-        ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-        : channel;
+      const target = await getTargetChannel(channel, stored);
       await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
     } else if (event === 'pull_request_review_comment') {
@@ -511,9 +546,7 @@ app.post('/ghwebhook', async (req, res) => {
       const mentionedPings = extractGithubMentions(comment.body);
 
       const stored = prMessageMap.get(pr.node_id);
-      const target = stored
-        ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-        : channel;
+      const target = await getTargetChannel(channel, stored);
       await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
       if (stored && !isDeleted && process.env.COMMENT_REACTION) {
@@ -532,9 +565,7 @@ app.post('/ghwebhook', async (req, res) => {
       const mentionedPings = extractGithubMentions(comment.body);
 
       const stored = prMessageMap.get(issue.node_id);
-      const target = stored
-        ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
-        : channel;
+      const target = await getTargetChannel(channel, stored);
       await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
       if (stored && !isDeleted && process.env.COMMENT_REACTION) {

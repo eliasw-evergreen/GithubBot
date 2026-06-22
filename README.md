@@ -131,6 +131,7 @@ Copy `.env.example` to `.env` and fill in all values:
 | `CLOSED_REACTION` | Discord emoji ID or unicode to react on closed PRs |
 | `PR_PING_ROLE` | Discord role ID to ping when a new PR is opened |
 | `CONFIG_ROLE` | Discord role ID allowed to use slash commands |
+| `PRUNE_DAYS` | Days to keep closed PR entries before pruning (default: none) |
 
 ---
 
