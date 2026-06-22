@@ -294,7 +294,7 @@ app.post('/ghwebhook', async (req, res) => {
         if (action === 'reopened' && stored?.messageId) {
           const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
           if (originalMsg) {
-            await originalMsg.edit({ content: `${rolePing}${mention} opened a PR` });
+            await originalMsg.edit({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
             for (const [, reaction] of originalMsg.reactions.cache) {
               const eId = reaction.emoji.id;
               const eName = reaction.emoji.name;
@@ -305,9 +305,19 @@ app.post('/ghwebhook', async (req, res) => {
                 await reaction.users.remove(client.user.id);
               }
             }
+            if (!stored.threadId) {
+              const newThread = await originalMsg.startThread({
+                name: `PR #${pr.number} — ${pr.title}`.slice(0, 100),
+                autoArchiveDuration: 10080,
+              });
+              stored.threadId = newThread.id;
+              prMessageMap.set(pr.node_id, stored);
+              savePrMap();
+            }
           }
-          const thread = channel.threads.cache.get(stored.threadId)
-            ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel;
+          const thread = stored.threadId
+            ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
+            : channel;
           await thread.send({ content: rolePing || undefined, embeds: [embed] });
         } else {
           const msg = await channel.send({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
@@ -344,8 +354,8 @@ app.post('/ghwebhook', async (req, res) => {
             await channel.send({ embeds: [embed] });
           }
         } else {
-          await channel.send({ embeds: [embed] });
-          prMessageMap.set(pr.node_id, { messageId: null, threadId: null });
+          const closeMsgResult = await channel.send({ embeds: [embed] });
+          prMessageMap.set(pr.node_id, { messageId: closeMsgResult.id, threadId: null });
           savePrMap();
         }
       }
