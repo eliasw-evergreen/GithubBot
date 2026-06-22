@@ -273,13 +273,35 @@ app.post('/ghwebhook', async (req, res) => {
         const embed = prEmbed(pr, repo, action);
         const mention = mentionForGithubUser(pr.user.login);
         const rolePing = process.env.PR_PING_ROLE ? `<@&${process.env.PR_PING_ROLE}> ` : '';
-        const msg = await channel.send({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
 
-        const thread = await msg.startThread({
-          name: `PR #${pr.number} — ${pr.title}`.slice(0, 100),
-          autoArchiveDuration: 10080,
-        });
-        prMessageMap.set(pr.node_id, { messageId: msg.id, threadId: thread.id });
+        const stored = prMessageMap.get(pr.node_id);
+
+        if (action === 'reopened' && stored) {
+          const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+          if (originalMsg) {
+            await originalMsg.edit({ content: `${rolePing}${mention} opened a PR` });
+            for (const [, reaction] of originalMsg.reactions.cache) {
+              const eId = reaction.emoji.id;
+              const eName = reaction.emoji.name;
+              if (
+                (process.env.MERGED_REACTION && eId === process.env.MERGED_REACTION)
+                || (process.env.CLOSED_REACTION && (eId === process.env.CLOSED_REACTION || eName === process.env.CLOSED_REACTION))
+              ) {
+                await reaction.users.remove(client.user.id);
+              }
+            }
+          }
+          const thread = channel.threads.cache.get(stored.threadId)
+            ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel;
+          await thread.send({ content: rolePing || undefined, embeds: [embed] });
+        } else {
+          const msg = await channel.send({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
+          const thread = await msg.startThread({
+            name: `PR #${pr.number} — ${pr.title}`.slice(0, 100),
+            autoArchiveDuration: 10080,
+          });
+          prMessageMap.set(pr.node_id, { messageId: msg.id, threadId: thread.id });
+        }
 
       } else if (action === 'closed') {
         const actionKey = pr.merged ? 'closed_merged' : 'closed_unmerged';
@@ -294,6 +316,8 @@ app.post('/ghwebhook', async (req, res) => {
             } else if (!pr.merged && process.env.CLOSED_REACTION) {
               await originalMsg.react(process.env.CLOSED_REACTION);
             }
+            const prefix = pr.merged ? '[Merged] ' : '[Closed] ';
+            await originalMsg.edit({ content: `${prefix}${originalMsg.content}` });
           }
           const thread = channel.threads.cache.get(stored.threadId)
             ?? await channel.threads.fetch(stored.threadId).catch(() => null);
