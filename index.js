@@ -239,12 +239,13 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; }
 }));
 
-app.post('/webhook', async (req, res) => {
+app.post('/ghwebhook', async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send('Invalid signature');
 
   const event = req.headers['x-github-event'];
   const payload = req.body;
   res.sendStatus(200);
+  console.log(`[${event}] Received webhook (action: ${payload.action})`);
 
   const channel = client.channels.cache.get(process.env.DISCORD_CHANNEL_ID);
   if (!channel) return;
