@@ -185,6 +185,22 @@ function commentEmbed(comment, pr, repo, isReview) {
   return embed;
 }
 
+function reviewRequestEmbed(pr, repo, reviewers, senderLogin) {
+  const reviewerNames = reviewers.map(r => `**${r.login}**`).join(', ');
+  const requester = mentionForGithubUser(senderLogin);
+
+  return new EmbedBuilder()
+    .setTitle('👀 Review Requested')
+    .setURL(pr.html_url)
+    .setColor(Colors.Yellow)
+    .addFields(
+      { name: 'Pull Request', value: `[#${pr.number} — ${pr.title}](${pr.html_url})` },
+      { name: 'Requested by', value: requester, inline: true },
+      { name: 'Reviewers', value: reviewerNames, inline: true },
+    )
+    .setFooter({ text: repo.full_name });
+}
+
 // ── Slash command handler ─────────────────────────────────────────────────────
 
 client.on('interactionCreate', async interaction => {
@@ -328,6 +344,19 @@ app.post('/ghwebhook', async (req, res) => {
           prMessageMap.set(pr.node_id, { messageId: msg.id, threadId: thread.id });
           savePrMap();
         }
+
+      } else if (action === 'review_requested') {
+        const reviewers = pr.requested_reviewers ?? [];
+        if (reviewers.length === 0) return;
+
+        const embed = reviewRequestEmbed(pr, repo, reviewers, payload.sender?.login);
+        const pings = reviewers.map(r => mentionForGithubUser(r.login)).filter(p => p.startsWith('<@'));
+
+        const stored = prMessageMap.get(pr.node_id);
+        const target = stored?.threadId
+          ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
+          : channel;
+        await target.send({ content: pings.join(' ') || undefined, embeds: [embed] });
 
       } else if (action === 'closed') {
         const actionKey = pr.merged ? 'closed_merged' : 'closed_unmerged';
