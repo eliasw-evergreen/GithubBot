@@ -335,6 +335,9 @@ app.post('/ghwebhook', async (req, res) => {
             ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
             : channel;
           await thread.send({ content: rolePing || undefined, embeds: [embed] });
+        } else if ((action === 'ready_for_review' || action === 'converted_to_draft') && stored?.messageId) {
+          const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+          if (originalMsg) await originalMsg.edit({ embeds: [embed] });
         } else {
           const msg = await channel.send({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
           const thread = await msg.startThread({
@@ -365,21 +368,24 @@ app.post('/ghwebhook', async (req, res) => {
         const stored = prMessageMap.get(pr.node_id);
         if (stored) {
           const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
+          let editedOriginal = false;
           if (originalMsg) {
             if (pr.merged && process.env.MERGED_REACTION) {
               await originalMsg.react(process.env.MERGED_REACTION);
             } else if (!pr.merged && process.env.CLOSED_REACTION) {
               await originalMsg.react(process.env.CLOSED_REACTION);
             }
+            const cleanContent = originalMsg.content.replace(/^\[(?:Closed|Merged)\] /, '');
             const prefix = pr.merged ? '[Merged] ' : '[Closed] ';
-            await originalMsg.edit({ content: `${prefix}${originalMsg.content}` });
+            await originalMsg.edit({ content: `${prefix}${cleanContent}`, embeds: [embed] });
+            editedOriginal = true;
           }
           const thread = channel.threads.cache.get(stored.threadId)
             ?? await channel.threads.fetch(stored.threadId).catch(() => null);
           if (thread) {
             await thread.send({ embeds: [embed] });
             await thread.setArchived(true);
-          } else {
+          } else if (!editedOriginal) {
             await channel.send({ embeds: [embed] });
           }
         } else {
