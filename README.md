@@ -85,7 +85,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/your-vps-domain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/your-vps-domain.com/privkey.pem;
 
-    location /webhook {
+    location /ghwebhook {
         proxy_pass http://localhost:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -102,11 +102,12 @@ Open port 3000 in your firewall. GitHub supports HTTP webhooks but your secret w
 Do this for each repository you want to monitor:
 
 1. Go to the repo → **Settings → Webhooks → Add webhook**
-2. **Payload URL**: `https://your-vps-domain.com/webhook`
+2. **Payload URL**: `https://your-vps-domain.com/ghwebhook`
 3. **Content type**: `application/json`
 4. **Secret**: a strong random string — copy it, you'll add it to `.env` as `GITHUB_WEBHOOK_SECRET`
 5. **Which events?** → Let me select individual events:
    - Pull requests
+   - Pull request reviews
    - Pull request review comments
    - Issue comments
 6. Click **Add webhook**
