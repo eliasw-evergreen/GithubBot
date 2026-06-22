@@ -132,6 +132,21 @@ function prEmbed(pr, repo, action) {
   return embed;
 }
 
+function extractGithubMentions(text) {
+  if (!text) return [];
+  const userMap = loadUserMap();
+  const matches = [...text.matchAll(/@([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)/g)];
+  const pings = [];
+  for (const match of matches) {
+    const discordId = githubToDiscord(userMap, match[1]);
+    if (discordId) {
+      const ping = `<@${discordId}>`;
+      if (!pings.includes(ping)) pings.push(ping);
+    }
+  }
+  return pings;
+}
+
 function commentEmbed(comment, pr, repo, isReview) {
   const body = comment.body ? comment.body.slice(0, 1024) : '*No content.*';
   const author = mentionForGithubUser(comment.user.login);
@@ -257,7 +272,8 @@ app.post('/ghwebhook', async (req, res) => {
       if (['opened', 'reopened', 'ready_for_review', 'converted_to_draft'].includes(action)) {
         const embed = prEmbed(pr, repo, action);
         const mention = mentionForGithubUser(pr.user.login);
-        const msg = await channel.send({ content: `${mention} opened a PR`, embeds: [embed] });
+        const rolePing = process.env.PR_PING_ROLE ? `<@&${process.env.PR_PING_ROLE}> ` : '';
+        const msg = await channel.send({ content: `${rolePing}${mention} opened a PR`, embeds: [embed] });
 
         const thread = await msg.startThread({
           name: `PR #${pr.number} — ${pr.title}`.slice(0, 100),
@@ -298,11 +314,13 @@ app.post('/ghwebhook', async (req, res) => {
       const { comment, pull_request: pr, repository: repo } = payload;
       const embed = commentEmbed(comment, pr, repo, true);
 
+      const mentionedPings = extractGithubMentions(comment.body);
+
       const stored = prMessageMap.get(pr.node_id);
       const target = stored
         ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
         : channel;
-      await target.send({ embeds: [embed] });
+      await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
       if (stored && process.env.COMMENT_REACTION) {
         const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
@@ -314,11 +332,13 @@ app.post('/ghwebhook', async (req, res) => {
       const { comment, issue, repository: repo } = payload;
       const embed = commentEmbed(comment, issue, repo, false);
 
+      const mentionedPings = extractGithubMentions(comment.body);
+
       const stored = prMessageMap.get(issue.node_id);
       const target = stored
         ? (channel.threads.cache.get(stored.threadId) ?? await channel.threads.fetch(stored.threadId).catch(() => null) ?? channel)
         : channel;
-      await target.send({ embeds: [embed] });
+      await target.send({ content: mentionedPings.join(' ') || undefined, embeds: [embed] });
 
       if (stored && process.env.COMMENT_REACTION) {
         const originalMsg = await channel.messages.fetch(stored.messageId).catch(() => null);
