@@ -14,10 +14,10 @@ A Discord bot that posts rich notifications for GitHub Pull Request activity. Wh
 ## How it works
 
 ```
-GitHub repo  ──webhook──▶  Express server (port 3000)  ──▶  discord.js bot  ──▶  Discord channel
+GitHub repo  ──webhook──▶  ASP.NET server ──▶  Discord.Net bot  ──▶  Discord channel
 ```
 
-The bot runs an Express HTTP server alongside the Discord client. GitHub sends webhook events to the server, the server parses them and calls the Discord API to post or update messages.
+The bot runs an ASP.NET minimal API server alongside a Discord.Net client. GitHub sends webhook events to the server, they're dispatched to event-type handlers via `WebhookEventDispatcher`, and the Discord API is called to post or update messages.
 
 ---
 
@@ -51,24 +51,22 @@ Enable **Developer Mode** in Discord (User Settings → Advanced → Developer M
 git clone https://github.com/eliasw-evergreen/GithubBot.git
 cd GithubBot
 
-# Install dependencies
-npm install
-
 # Create your environment file
 cp .env.example .env
 nano .env   # fill in all values (see Environment Variables section below)
 
-# Start the bot
-npm start
+# Build and run
+dotnet run --project GithubBot.csproj
 ```
 
-To keep it running after you disconnect, use [PM2](https://pm2.keymetrics.io/):
+To keep it running after you disconnect, use a systemd service or screen/tmux:
 
 ```bash
-npm install -g pm2
-pm2 start index.js --name githubbot
-pm2 save
-pm2 startup   # follow the printed command to enable auto-start on reboot
+# Build a self-contained publish
+dotnet publish -c Release -o publish
+
+# Run with nohup
+nohup ./publish/GithubBot &
 ```
 
 ### 4. Expose the webhook endpoint
@@ -125,7 +123,7 @@ Copy `.env.example` to `.env` and fill in all values:
 | `DISCORD_GUILD_ID` | ID of the Discord server the bot is in |
 | `DISCORD_CHANNEL_ID` | ID of the channel to post PR notifications in |
 | `GITHUB_WEBHOOK_SECRET` | Secret you set when creating the GitHub webhook |
-| `PORT` | Port for the Express server (default: `3000`) |
+| `PORT` | Port for the webhook server (default: `3000`) |
 | `MERGED_REACTION` | Discord emoji ID to react on merged PRs |
 | `COMMENT_REACTION` | Discord emoji ID to react on new comments |
 | `CLOSED_REACTION` | Discord emoji ID or unicode to react on closed PRs |
@@ -183,9 +181,26 @@ Mappings are stored in `usermap.json` on disk and persist across restarts. The f
 
 ```
 GithubBot/
-├── index.js          # Bot entry point — Express webhook server + discord.js client
-├── usermap.json      # Persisted Discord <-> GitHub mappings (auto-created, gitignored)
-├── .env              # Your secrets (gitignored)
-├── .env.example      # Template for .env
-└── package.json
+├── Program.cs                # Entry point — ASP.NET minimal API + DI
+├── GithubBot.csproj          # .NET 8 project file
+├── Handlers/                 # One handler per GitHub event type
+│   ├── PullRequestHandler.cs
+│   ├── PullRequestReviewHandler.cs
+│   ├── PullRequestReviewCommentHandler.cs
+│   └── IssueCommentHandler.cs
+├── Services/
+│   ├── WebhookEventDispatcher.cs   # Routes event strings to handlers
+│   ├── UserMapService.cs           # usermap.json persistence
+│   └── PrMapService.cs             # prmap.json persistence + prune
+├── Discord/
+│   ├── DiscordBotService.cs
+│   ├── EmbedBuilders.cs
+│   └── SlashCommandHandler.cs
+├── Models/
+│   ├── GitHubUser.cs, Repository.cs
+│   ├── PullRequest.cs, Review.cs
+│   └── IssueComment.cs
+├── appsettings.json           # Default config (overridden by .env)
+├── .env                       # Your secrets (gitignored)
+└── .env.example               # Template for .env
 ```
