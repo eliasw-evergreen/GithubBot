@@ -59,10 +59,8 @@ public class PullRequestReviewHandler : IGitHubEventHandler
 
         if (stored != null && review.State == "changes_requested")
         {
-            var authorDiscordId = _userMap.GitHubToDiscord(pr.User.Login);
-            var reaction = authorDiscordId != null
-                ? _prefs.GetReaction(authorDiscordId, "changes_requested") ?? _config["Reactions:ChangesRequested"]
-                : _config["Reactions:ChangesRequested"];
+            var authorId = _userMap.GitHubToDiscord(pr.User.Login);
+            var reaction = _prefs.ResolveReaction(authorId, "changes_requested", _config["Reactions:ChangesRequested"]);
             if (!string.IsNullOrEmpty(reaction))
                 await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
         }

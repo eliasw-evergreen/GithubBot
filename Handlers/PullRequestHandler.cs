@@ -12,6 +12,7 @@ public class PullRequestHandler : IGitHubEventHandler
     private readonly DiscordBotService _discord;
     private readonly PrMapService _prMap;
     private readonly UserMapService _userMap;
+    private readonly PreferencesService _prefs;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestHandler> _logger;
 
@@ -19,12 +20,14 @@ public class PullRequestHandler : IGitHubEventHandler
         DiscordBotService discord,
         PrMapService prMap,
         UserMapService userMap,
+        PreferencesService prefs,
         IConfiguration config,
         ILogger<PullRequestHandler> logger)
     {
         _discord = discord;
         _prMap = prMap;
         _userMap = userMap;
+        _prefs = prefs;
         _config = config;
         _logger = logger;
     }
@@ -143,9 +146,10 @@ public class PullRequestHandler : IGitHubEventHandler
                 var originalMsg = await _discord.GetMessageAsync(channel.Id, stored.MessageId);
                 if (originalMsg != null)
                 {
-                    var reaction = merged
-                        ? _config["Reactions:Merged"]
-                        : _config["Reactions:Closed"];
+                    var authorId = _userMap.GitHubToDiscord(pr.User.Login);
+                    var reactionKey = merged ? "merged" : "closed";
+                    var serverDefault = merged ? _config["Reactions:Merged"] : _config["Reactions:Closed"];
+                    var reaction = _prefs.ResolveReaction(authorId, reactionKey, serverDefault);
                     if (!string.IsNullOrEmpty(reaction))
                         await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
 

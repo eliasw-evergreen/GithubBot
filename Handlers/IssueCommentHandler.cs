@@ -12,6 +12,7 @@ public class IssueCommentHandler : IGitHubEventHandler
     private readonly DiscordBotService _discord;
     private readonly PrMapService _prMap;
     private readonly UserMapService _userMap;
+    private readonly PreferencesService _prefs;
     private readonly IConfiguration _config;
     private readonly ILogger<IssueCommentHandler> _logger;
 
@@ -19,12 +20,14 @@ public class IssueCommentHandler : IGitHubEventHandler
         DiscordBotService discord,
         PrMapService prMap,
         UserMapService userMap,
+        PreferencesService prefs,
         IConfiguration config,
         ILogger<IssueCommentHandler> logger)
     {
         _discord = discord;
         _prMap = prMap;
         _userMap = userMap;
+        _prefs = prefs;
         _config = config;
         _logger = logger;
     }
@@ -56,13 +59,10 @@ public class IssueCommentHandler : IGitHubEventHandler
 
         if (stored != null && !isDeleted)
         {
-            var reaction = _config["Reactions:Comment"];
+            var authorId = _userMap.GitHubToDiscord(pr.User.Login);
+            var reaction = _prefs.ResolveReaction(authorId, "comment", _config["Reactions:Comment"]);
             if (!string.IsNullOrEmpty(reaction))
-            {
-                var originalMsg = await channel.GetMessageAsync(stored.MessageId);
-                if (originalMsg != null)
-                    await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
-            }
+                await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
         }
     }
 

@@ -81,7 +81,10 @@ public class SlashCommandHandler
                         .WithDescription("The event to set a reaction for")
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Changes Requested", "changes_requested"))
+                        .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Comment", "comment")
+                        .AddChoice("Merged", "merged")
+                        .AddChoice("Closed", "closed"))
                     .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
                     .Build(),
                 guildId);
@@ -95,7 +98,10 @@ public class SlashCommandHandler
                         .WithDescription("The event to clear")
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Changes Requested", "changes_requested"))
+                        .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Comment", "comment")
+                        .AddChoice("Merged", "merged")
+                        .AddChoice("Closed", "closed"))
                     .Build(),
                 guildId);
 
@@ -269,7 +275,10 @@ public class SlashCommandHandler
     private static string EventLabel(string eventKey) => eventKey switch
     {
         "changes_requested" => "Changes Requested",
-        _ => eventKey,
+        "comment"           => "Comment",
+        "merged"            => "Merged",
+        "closed"            => "Closed",
+        _                   => eventKey,
     };
 
     private async Task BackfillMappingAsync(string githubLogin, string discordId)

@@ -66,6 +66,16 @@ public class PreferencesService
         Save();
     }
 
+    public string? ResolveReaction(string? discordId, string eventKey, string? serverDefault)
+    {
+        if (discordId != null)
+        {
+            var pref = GetReaction(discordId, eventKey);
+            if (pref != null) return pref;
+        }
+        return string.IsNullOrEmpty(serverDefault) ? null : serverDefault;
+    }
+
     public UserPreferences? GetAll(string discordId)
     {
         _prefs.TryGetValue(discordId, out var prefs);
