@@ -141,6 +141,9 @@ public class PullRequestHandler : IGitHubEventHandler
             var threadId = await _discord.CreateThreadAsync(channel.Id, msg.Id,
                 $"PR #{pr.Number} — {pr.Title}", ct);
             _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId });
+
+            if (threadId != 0 && !string.IsNullOrWhiteSpace(pr.Body))
+                await _discord.SendMessageAsync(threadId, pr.Body.Length > 2000 ? pr.Body[..2000] : pr.Body, null, ct);
         }
     }
 

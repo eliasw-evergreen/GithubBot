@@ -76,14 +76,14 @@ public class DiscordBotService : IHostedService
         return Task.FromResult<IMessageChannel?>(thread ?? channel);
     }
 
-    public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed embed, CancellationToken ct = default)
+    public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed? embed, CancellationToken ct = default)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return null;
 
-        if (!string.IsNullOrEmpty(content))
-            return await channel.SendMessageAsync(content, embed: embed);
-        return await channel.SendMessageAsync(embed: embed);
+        return await channel.SendMessageAsync(
+            string.IsNullOrEmpty(content) ? null : content,
+            embed: embed);
     }
 
     public async Task EditMessageAsync(ulong channelId, ulong messageId, string? newContent, Embed embed)
