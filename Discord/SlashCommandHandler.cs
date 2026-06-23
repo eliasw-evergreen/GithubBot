@@ -13,12 +13,12 @@ public class SlashCommandHandler
     private readonly ILogger<SlashCommandHandler> _logger;
 
     public SlashCommandHandler(
-        DiscordSocketClient client,
+        DiscordBotService discord,
         UserMapService userMap,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
-        _client = client;
+        _client = discord.Client;
         _userMap = userMap;
         _config = config;
         _logger = logger;

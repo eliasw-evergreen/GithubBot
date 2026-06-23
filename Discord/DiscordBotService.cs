@@ -76,7 +76,7 @@ public class DiscordBotService : IHostedService
         if (stored?.ThreadId == null || stored.ThreadId == 0) return Task.FromResult<IMessageChannel?>(channel);
 
         var thread = _client.GetChannel(stored.ThreadId.Value) as IMessageChannel;
-        return Task.FromResult(thread ?? channel);
+        return Task.FromResult<IMessageChannel?>(thread ?? channel);
     }
 
     public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed embed, CancellationToken ct = default)
