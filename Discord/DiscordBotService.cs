@@ -15,20 +15,17 @@ public class DiscordBotService : IHostedService
     private ulong _channelId;
 
     public DiscordBotService(
+        DiscordSocketClient client,
         IConfiguration config,
         UserMapService userMap,
         SlashCommandHandler slashHandler,
         ILogger<DiscordBotService> logger)
     {
+        _client = client;
         _config = config;
         _userMap = userMap;
         _slashHandler = slashHandler;
         _logger = logger;
-
-        _client = new DiscordSocketClient(new DiscordSocketConfig
-        {
-            GatewayIntents = GatewayIntents.Guilds | GatewayIntents.MessageContent,
-        });
 
         _client.Log += msg =>
         {

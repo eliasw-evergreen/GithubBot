@@ -61,6 +61,10 @@ var dataPath = repoRoot;
 // Register services
 builder.Services.AddSingleton(new UserMapService(Path.Combine(dataPath, "usermap.json")));
 builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.json")));
+builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
+{
+    GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,
+}));
 builder.Services.AddSingleton<DiscordBotService>();
 builder.Services.AddSingleton<SlashCommandHandler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DiscordBotService>());
