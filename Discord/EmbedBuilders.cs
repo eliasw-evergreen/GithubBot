@@ -190,7 +190,6 @@ public static class EmbedBuilders
     private static string? ReactionEmoji(string? reaction)
     {
         if (string.IsNullOrEmpty(reaction)) return null;
-        var match = System.Text.RegularExpressions.Regex.Match(reaction, @"<a?:(\w+):\d+>");
-        return match.Success ? $":{match.Groups[1].Value}:" : reaction.Trim();
+        return reaction.Trim();
     }
 }
