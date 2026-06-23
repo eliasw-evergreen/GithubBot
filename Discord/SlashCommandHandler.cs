@@ -82,6 +82,7 @@ public class SlashCommandHandler
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
                         .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Approved", "approved")
                         .AddChoice("Comment", "comment")
                         .AddChoice("Merged", "merged")
                         .AddChoice("Closed", "closed"))
@@ -99,9 +100,17 @@ public class SlashCommandHandler
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
                         .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Approved", "approved")
                         .AddChoice("Comment", "comment")
                         .AddChoice("Merged", "merged")
                         .AddChoice("Closed", "closed"))
+                    .Build(),
+                guildId);
+
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("listreactions")
+                    .WithDescription("Show all active reactions (preferences override .env)")
                     .Build(),
                 guildId);
 
@@ -146,6 +155,9 @@ public class SlashCommandHandler
                 break;
             case "clearreaction":
                 await HandleClearReaction(command);
+                break;
+            case "listreactions":
+                await HandleListReactions(command);
                 break;
         }
     }
@@ -272,9 +284,40 @@ public class SlashCommandHandler
             .Build()], ephemeral: true);
     }
 
+    private async Task HandleListReactions(SocketSlashCommand command)
+    {
+        var keys = new[] { "merged", "closed", "approved", "changes_requested", "comment" };
+        var envKeys = new Dictionary<string, string>
+        {
+            ["merged"]             = "Reactions:Merged",
+            ["closed"]             = "Reactions:Closed",
+            ["approved"]           = "Reactions:Approved",
+            ["changes_requested"]  = "Reactions:ChangesRequested",
+            ["comment"]            = "Reactions:Comment",
+        };
+
+        var lines = keys.Select(key =>
+        {
+            var pref = _prefs.GetReaction(key);
+            var env  = _config[envKeys[key]];
+            var active = pref ?? env;
+            var source = pref != null ? "prefs" : (!string.IsNullOrEmpty(env) ? ".env" : "unset");
+            var display = string.IsNullOrEmpty(active) ? "*unset*" : active;
+            return $"**{EventLabel(key)}** — {display} `[{source}]`";
+        });
+
+        await command.RespondAsync(embeds: [new EmbedBuilder()
+            .WithTitle("Active Reactions")
+            .WithColor(new Color(0x5865F2))
+            .WithDescription(string.Join('\n', lines))
+            .WithCurrentTimestamp()
+            .Build()], ephemeral: true);
+    }
+
     private static string EventLabel(string eventKey) => eventKey switch
     {
         "changes_requested" => "Changes Requested",
+        "approved"          => "Approved",
         "comment"           => "Comment",
         "merged"            => "Merged",
         "closed"            => "Closed",

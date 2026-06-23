@@ -43,7 +43,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap);
 
         var pings = new List<string>();
-        if (review.State == "changes_requested")
+        if (review.State == "changes_requested" || review.State == "approved")
         {
             var authorPing = _userMap.GitHubToDiscord(pr.User.Login);
             if (authorPing != null)
@@ -57,9 +57,14 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var target = await _discord.GetTargetChannel(channel, stored, ct);
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
 
-        if (stored != null && review.State == "changes_requested")
+        if (stored != null)
         {
-            var reaction = _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]);
+            var reaction = review.State switch
+            {
+                "changes_requested" => _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]),
+                "approved"          => _prefs.ResolveReaction("approved", _config["Reactions:Approved"]),
+                _                   => null,
+            };
             if (!string.IsNullOrEmpty(reaction))
                 await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
         }

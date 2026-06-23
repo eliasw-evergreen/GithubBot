@@ -40,6 +40,7 @@ var envMap = new Dictionary<string, string?>
     ["Reactions:Comment"] = Env.GetString("COMMENT_REACTION"),
     ["Reactions:Closed"] = Env.GetString("CLOSED_REACTION"),
     ["Reactions:ChangesRequested"] = Env.GetString("CHANGES_REQUESTED_REACTION"),
+    ["Reactions:Approved"] = Env.GetString("APPROVED_REACTION"),
     ["Roles:PrPing"] = Env.GetString("PR_PING_ROLE"),
     ["Roles:Config"] = Env.GetString("CONFIG_ROLE"),
     ["PruneDays"] = Env.GetString("PRUNE_DAYS"),
