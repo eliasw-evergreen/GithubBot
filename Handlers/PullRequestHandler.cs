@@ -94,20 +94,25 @@ public class PullRequestHandler : IGitHubEventHandler
 
                     await _discord.ClearReactionsAsync(channel.Id, stored.MessageId,
                         _config["Reactions:Merged"], _config["Reactions:Closed"], ct);
-
-                    if (stored.ThreadId == null || stored.ThreadId == 0)
-                    {
-                        var thread = await _discord.CreateThreadAsync(channel.Id, stored.MessageId,
-                            $"PR #{pr.Number} — {pr.Title}", ct);
-                        stored.ThreadId = thread;
-                        _prMap.Save();
-                    }
                 }
             }
 
-            var target = await _discord.GetTargetChannel(channel, stored, ct);
-            var ping = !string.IsNullOrEmpty(rolePrefix) ? rolePrefix : null;
-            await _discord.SendMessageAsync(target.Id, ping, embed, ct);
+            if (stored.ThreadId != null && stored.ThreadId != 0)
+            {
+                // Unarchive the thread so it's accessible and cached again
+                await _discord.UnarchiveThreadAsync(stored.ThreadId.Value, ct);
+                await _discord.SendMessageAsync(stored.ThreadId.Value, null, embed, ct);
+            }
+            else if (stored.MessageId != 0)
+            {
+                var threadId = await _discord.CreateThreadAsync(channel.Id, stored.MessageId,
+                    $"PR #{pr.Number} — {pr.Title}", ct);
+                stored.ThreadId = threadId;
+                _prMap.Save();
+                if (threadId != 0)
+                    await _discord.SendMessageAsync(threadId, null, embed, ct);
+            }
+
             return;
         }
 

@@ -137,6 +137,21 @@ public class DiscordBotService : IHostedService
             await thread.ModifyAsync(props => props.Archived = true);
     }
 
+    public async Task UnarchiveThreadAsync(ulong threadId, CancellationToken ct = default)
+    {
+        // Archived threads aren't in the gateway cache — fetch via REST and unarchive
+        try
+        {
+            var restThread = await _client.Rest.GetChannelAsync(threadId) as global::Discord.Rest.RestThreadChannel;
+            if (restThread != null)
+                await restThread.ModifyAsync(props => props.Archived = false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to unarchive thread {ThreadId}", threadId);
+        }
+    }
+
     public async Task<IThreadChannel?> GetThreadAsync(ulong channelId, ulong threadId, CancellationToken ct = default)
     {
         var thread = _client.GetChannel(threadId) as IThreadChannel;
