@@ -194,7 +194,7 @@ public class SlashCommandHandler
         _userMap.Save(map);
 
         var all = string.Join(", ", existing.Select(n => $"**[{n}](https://github.com/{n})**"));
-        await command.RespondAsync(embeds: [new EmbedBuilder()
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithColor(Color.Green)
             .WithDescription($"<@{discordUser.Id}> is now mapped to: {all}")
             .WithCurrentTimestamp()
@@ -228,7 +228,7 @@ public class SlashCommandHandler
             else
                 map[discordUser.Id.ToString()] = updated;
             _userMap.Save(map);
-            await command.RespondAsync(embeds: [new EmbedBuilder()
+            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
                 .WithColor(Color.Orange)
                 .WithDescription($"Removed **{githubUsername}** from <@{discordUser.Id}>'s mappings")
                 .WithCurrentTimestamp()
@@ -238,7 +238,7 @@ public class SlashCommandHandler
         {
             map.Remove(discordUser.Id.ToString());
             _userMap.Save(map);
-            await command.RespondAsync(embeds: [new EmbedBuilder()
+            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
                 .WithColor(Color.Orange)
                 .WithDescription($"Removed all GitHub mappings for <@{discordUser.Id}>")
                 .WithCurrentTimestamp()
@@ -261,7 +261,7 @@ public class SlashCommandHandler
             return $"<@{kvp.Key}> → {links}";
         });
 
-        await command.RespondAsync(embeds: [new EmbedBuilder()
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithTitle("Discord ↔ GitHub Mappings")
             .WithColor(new Color(0x5865F2))
             .WithDescription(string.Join('\n', lines))
@@ -276,11 +276,11 @@ public class SlashCommandHandler
 
         _prefs.SetReaction(eventKey, emoji);
 
-        await command.RespondAsync(embeds: [new EmbedBuilder()
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithColor(Color.Green)
             .WithDescription($"Reaction for **{EventLabel(eventKey)}** is now set to {emoji}")
             .WithCurrentTimestamp()
-            .Build()], ephemeral: true);
+            .Build()]);
     }
 
     private async Task HandleClearReaction(SocketSlashCommand command)
@@ -289,11 +289,11 @@ public class SlashCommandHandler
 
         _prefs.ClearReaction(eventKey);
 
-        await command.RespondAsync(embeds: [new EmbedBuilder()
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithColor(Color.Orange)
             .WithDescription($"Reaction override for **{EventLabel(eventKey)}** cleared — .env value will be used.")
             .WithCurrentTimestamp()
-            .Build()], ephemeral: true);
+            .Build()]);
     }
 
     private async Task HandleListReactions(SocketSlashCommand command)
@@ -324,12 +324,12 @@ public class SlashCommandHandler
             return $"**{EventLabel(key)}** — {display} `[{source}]`";
         });
 
-        await command.RespondAsync(embeds: [new EmbedBuilder()
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithTitle("Active Reactions")
             .WithColor(new Color(0x5865F2))
             .WithDescription(string.Join('\n', lines))
             .WithCurrentTimestamp()
-            .Build()], ephemeral: true);
+            .Build()]);
     }
 
     private static string EventLabel(string eventKey) => eventKey switch
