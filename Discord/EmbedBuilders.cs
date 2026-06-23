@@ -57,13 +57,14 @@ public static class EmbedBuilders
         return embed.Build();
     }
 
-    public static Embed CommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap)
+    public static Embed CommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap, string? commentReaction = null)
     {
         var body = !string.IsNullOrEmpty(comment.Body) ? Truncate(comment.Body, 1024) : "*No content.*";
         var author = Mention(userMap, comment.User.Login);
+        var emoji = ReactionEmoji(commentReaction) ?? "💬";
 
         var embed = new EmbedBuilder()
-            .WithTitle(isReview ? "💬 Review Comment" : "💬 PR Comment")
+            .WithTitle(isReview ? $"{emoji} Review Comment" : $"{emoji} PR Comment")
             .WithUrl(comment.HtmlUrl)
             .WithColor(Color.Blue)
             .WithAuthor(comment.User.Login, comment.User.AvatarUrl, $"https://github.com/{comment.User.Login}")
@@ -82,13 +83,14 @@ public static class EmbedBuilders
         return embed.Build();
     }
 
-    public static Embed DeletedCommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap)
+    public static Embed DeletedCommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap, string? commentReaction = null)
     {
         var body = !string.IsNullOrEmpty(comment.Body) ? Truncate(comment.Body, 1024) : "*No content.*";
         var author = Mention(userMap, comment.User.Login);
+        var emoji = ReactionEmoji(commentReaction) ?? "💬";
 
         var embed = new EmbedBuilder()
-            .WithTitle(isReview ? "🗑️ Review Comment Removed" : "🗑️ PR Comment Removed")
+            .WithTitle(isReview ? $"🗑️ Review Comment Removed" : $"🗑️ PR Comment Removed")
             .WithUrl(pr.HtmlUrl)
             .WithColor(Color.Red)
             .WithAuthor(comment.User.Login, comment.User.AvatarUrl, $"https://github.com/{comment.User.Login}")

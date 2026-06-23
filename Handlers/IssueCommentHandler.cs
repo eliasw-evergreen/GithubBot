@@ -44,9 +44,10 @@ public class IssueCommentHandler : IGitHubEventHandler
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
         var isDeleted = action == "deleted";
 
+        var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
         var embed = isDeleted
-            ? EmbedBuilders.DeletedCommentEmbed(comment, pr, repo, false, _userMap)
-            : EmbedBuilders.CommentEmbed(comment, pr, repo, false, _userMap);
+            ? EmbedBuilders.DeletedCommentEmbed(comment, pr, repo, false, _userMap, commentReaction)
+            : EmbedBuilders.CommentEmbed(comment, pr, repo, false, _userMap, commentReaction);
 
         var mentionedPings = ExtractGithubMentions(comment.Body);
 
