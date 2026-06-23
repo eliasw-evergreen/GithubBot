@@ -62,6 +62,8 @@ public class PrMapService
         Save();
     }
 
+    public IReadOnlyDictionary<string, PrMapEntry> GetAll() => _map;
+
     public void Prune(int days)
     {
         if (days <= 0) return;

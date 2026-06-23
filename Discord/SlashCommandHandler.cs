@@ -8,19 +8,25 @@ namespace GithubBot.Discord;
 public class SlashCommandHandler
 {
     private readonly DiscordSocketClient _client;
+    private readonly DiscordBotService _discord;
     private readonly UserMapService _userMap;
+    private readonly PrMapService _prMap;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
 
     public SlashCommandHandler(
         DiscordSocketClient client,
+        DiscordBotService discord,
         UserMapService userMap,
+        PrMapService prMap,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
         _client = client;
+        _discord = discord;
         _userMap = userMap;
+        _prMap = prMap;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -128,6 +134,8 @@ public class SlashCommandHandler
             .WithDescription($"<@{discordUser.Id}> is now mapped to: {all}")
             .WithCurrentTimestamp()
             .Build()]);
+
+        _ = Task.Run(() => BackfillMappingAsync(githubUsername, discordUser.Id.ToString()));
     }
 
     private async Task HandleUnmapUser(SocketSlashCommand command)
@@ -194,5 +202,66 @@ public class SlashCommandHandler
             .WithDescription(string.Join('\n', lines))
             .WithCurrentTimestamp()
             .Build()]);
+    }
+
+    private async Task BackfillMappingAsync(string githubLogin, string discordId)
+    {
+        try
+        {
+            var oldText = $"**{githubLogin}**";
+            var newText = $"<@{discordId}>";
+
+            var channel = await _discord.GetChannelAsync();
+            if (channel == null) return;
+
+            foreach (var (_, entry) in _prMap.GetAll())
+            {
+                var msg = await _discord.GetMessageAsync(channel.Id, entry.MessageId);
+                if (msg?.Embeds == null || msg.Embeds.Count == 0) continue;
+
+                var embed = msg.Embeds.First();
+                if (!EmbedContains(embed, oldText)) continue;
+
+                var updated = ReplaceInEmbed(embed, oldText, newText);
+                var newContent = msg.Content?.Replace(oldText, newText);
+                await _discord.EditMessageAsync(channel.Id, entry.MessageId, newContent, updated);
+                _logger.LogInformation("[Backfill] Updated message {MsgId} for {Login}", entry.MessageId, githubLogin);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Backfill] Failed for {Login}", githubLogin);
+        }
+    }
+
+    private static bool EmbedContains(IEmbed embed, string text)
+        => embed.Fields.Any(f => f.Value.Contains(text) || f.Name.Contains(text))
+        || (embed.Description?.Contains(text) ?? false);
+
+    private static Embed ReplaceInEmbed(IEmbed src, string oldText, string newText)
+    {
+        string Replace(string? s) => s?.Replace(oldText, newText) ?? "";
+
+        var builder = new EmbedBuilder()
+            .WithTitle(src.Title)
+            .WithUrl(src.Url)
+            .WithDescription(Replace(src.Description))
+            .WithFooter(src.Footer?.Text)
+            .WithImageUrl(src.Image?.Url)
+            .WithThumbnailUrl(src.Thumbnail?.Url);
+
+        if (src.Color.HasValue)
+            builder.WithColor(src.Color.Value);
+
+        if (src.Author != null)
+            builder.WithAuthor(src.Author.Value.Name, src.Author.Value.IconUrl, src.Author.Value.Url);
+
+        if (src.Timestamp.HasValue)
+            builder.WithTimestamp(src.Timestamp.Value);
+
+        foreach (var field in src.Fields)
+            builder.AddField(Replace(field.Name), Replace(field.Value), field.Inline);
+
+        return builder.Build();
     }
 }
