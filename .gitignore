@@ -1,4 +1,8 @@
-node_modules/
 .env
 usermap.json
 prmap.json
+node_modules/
+
+# C# build artifacts
+bin/
+obj/
