@@ -12,17 +12,23 @@ public class PullRequestReviewHandler : IGitHubEventHandler
     private readonly DiscordBotService _discord;
     private readonly PrMapService _prMap;
     private readonly UserMapService _userMap;
+    private readonly PreferencesService _prefs;
+    private readonly IConfiguration _config;
     private readonly ILogger<PullRequestReviewHandler> _logger;
 
     public PullRequestReviewHandler(
         DiscordBotService discord,
         PrMapService prMap,
         UserMapService userMap,
+        PreferencesService prefs,
+        IConfiguration config,
         ILogger<PullRequestReviewHandler> logger)
     {
         _discord = discord;
         _prMap = prMap;
         _userMap = userMap;
+        _prefs = prefs;
+        _config = config;
         _logger = logger;
     }
 
@@ -50,5 +56,15 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var stored = _prMap.Get(pr.NodeId);
         var target = await _discord.GetTargetChannel(channel, stored, ct);
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
+
+        if (stored != null && review.State == "changes_requested")
+        {
+            var authorDiscordId = _userMap.GitHubToDiscord(pr.User.Login);
+            var reaction = authorDiscordId != null
+                ? _prefs.GetReaction(authorDiscordId, "changes_requested") ?? _config["Reactions:ChangesRequested"]
+                : _config["Reactions:ChangesRequested"];
+            if (!string.IsNullOrEmpty(reaction))
+                await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
+        }
     }
 }

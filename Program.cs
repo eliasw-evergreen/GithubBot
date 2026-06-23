@@ -39,6 +39,7 @@ var envMap = new Dictionary<string, string?>
     ["Reactions:Merged"] = Env.GetString("MERGED_REACTION"),
     ["Reactions:Comment"] = Env.GetString("COMMENT_REACTION"),
     ["Reactions:Closed"] = Env.GetString("CLOSED_REACTION"),
+    ["Reactions:ChangesRequested"] = Env.GetString("CHANGES_REQUESTED_REACTION"),
     ["Roles:PrPing"] = Env.GetString("PR_PING_ROLE"),
     ["Roles:Config"] = Env.GetString("CONFIG_ROLE"),
     ["PruneDays"] = Env.GetString("PRUNE_DAYS"),
@@ -61,6 +62,7 @@ var dataPath = repoRoot;
 // Register services
 builder.Services.AddSingleton(new UserMapService(Path.Combine(dataPath, "usermap.json")));
 builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.json")));
+builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
 builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
 {
     GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,

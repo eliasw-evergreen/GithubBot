@@ -10,6 +10,7 @@ public class SlashCommandHandler
     private readonly DiscordSocketClient _client;
     private readonly UserMapService _userMap;
     private readonly PrMapService _prMap;
+    private readonly PreferencesService _prefs;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -19,12 +20,14 @@ public class SlashCommandHandler
         DiscordSocketClient client,
         UserMapService userMap,
         PrMapService prMap,
+        PreferencesService prefs,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
         _client = client;
         _userMap = userMap;
         _prMap = prMap;
+        _prefs = prefs;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -69,6 +72,33 @@ public class SlashCommandHandler
                     .Build(),
                 guildId);
 
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("setreaction")
+                    .WithDescription("Override a reaction emoji for yourself")
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("event")
+                        .WithDescription("The event to set a reaction for")
+                        .WithRequired(true)
+                        .WithType(ApplicationCommandOptionType.String)
+                        .AddChoice("Changes Requested", "changes_requested"))
+                    .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
+                    .Build(),
+                guildId);
+
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("clearreaction")
+                    .WithDescription("Remove your reaction override and use the server default")
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("event")
+                        .WithDescription("The event to clear")
+                        .WithRequired(true)
+                        .WithType(ApplicationCommandOptionType.String)
+                        .AddChoice("Changes Requested", "changes_requested"))
+                    .Build(),
+                guildId);
+
             _logger.LogInformation("Slash commands registered");
         }
         catch (Exception ex)
@@ -104,6 +134,12 @@ public class SlashCommandHandler
                 break;
             case "listmappings":
                 await HandleListMappings(command);
+                break;
+            case "setreaction":
+                await HandleSetReaction(command);
+                break;
+            case "clearreaction":
+                await HandleClearReaction(command);
                 break;
         }
     }
@@ -202,6 +238,39 @@ public class SlashCommandHandler
             .WithCurrentTimestamp()
             .Build()]);
     }
+
+    private async Task HandleSetReaction(SocketSlashCommand command)
+    {
+        var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
+        var emoji = ((string)command.Data.Options.First(o => o.Name == "emoji").Value).Trim();
+
+        _prefs.SetReaction(command.User.Id.ToString(), eventKey, emoji);
+
+        await command.RespondAsync(embeds: [new EmbedBuilder()
+            .WithColor(Color.Green)
+            .WithDescription($"Your reaction for **{EventLabel(eventKey)}** is now set to {emoji}")
+            .WithCurrentTimestamp()
+            .Build()], ephemeral: true);
+    }
+
+    private async Task HandleClearReaction(SocketSlashCommand command)
+    {
+        var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
+
+        _prefs.ClearReaction(command.User.Id.ToString(), eventKey);
+
+        await command.RespondAsync(embeds: [new EmbedBuilder()
+            .WithColor(Color.Orange)
+            .WithDescription($"Your reaction override for **{EventLabel(eventKey)}** has been cleared — server default will be used.")
+            .WithCurrentTimestamp()
+            .Build()], ephemeral: true);
+    }
+
+    private static string EventLabel(string eventKey) => eventKey switch
+    {
+        "changes_requested" => "Changes Requested",
+        _ => eventKey,
+    };
 
     private async Task BackfillMappingAsync(string githubLogin, string discordId)
     {
