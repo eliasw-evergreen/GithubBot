@@ -7,20 +7,26 @@ namespace GithubBot.Discord;
 public static class EmbedBuilders
 {
     public static Embed PrEmbed(PullRequest pr, Repository repo, string action, UserMapService userMap,
+        string? openedReaction = null, string? reopenedReaction = null,
+        string? readyForReviewReaction = null, string? convertedToDraftReaction = null,
         string? mergedReaction = null, string? closedReaction = null)
     {
-        var mergedEmoji  = ReactionEmoji(mergedReaction) ?? "🟣";
-        var closedEmoji  = ReactionEmoji(closedReaction) ?? "🔴";
+        var openedEmoji   = ReactionEmoji(openedReaction)           ?? "🔀";
+        var reopenedEmoji = ReactionEmoji(reopenedReaction)         ?? "🔁";
+        var readyEmoji    = ReactionEmoji(readyForReviewReaction)   ?? "✅";
+        var draftEmoji    = ReactionEmoji(convertedToDraftReaction) ?? "📝";
+        var mergedEmoji   = ReactionEmoji(mergedReaction)           ?? "🟣";
+        var closedEmoji   = ReactionEmoji(closedReaction)           ?? "🔴";
 
         var (title, color) = action switch
         {
-            "opened"             => ("🔀 Pull Request Opened",                        Color.Green),
-            "reopened"           => ("🔁 Pull Request Reopened",                      Color.Orange),
-            "ready_for_review"   => ("✅ PR Ready for Review",                        Color.Green),
-            "converted_to_draft" => ("📝 PR Converted to Draft",                      Color.LightGrey),
-            "closed_merged"      => ($"{mergedEmoji} Pull Request Merged",            Color.Purple),
-            "closed_unmerged"    => ($"{closedEmoji} Pull Request Closed",            Color.Red),
-            _                    => ("Pull Request",                                  Color.Default),
+            "opened"             => ($"{openedEmoji} Pull Request Opened",   Color.Green),
+            "reopened"           => ($"{reopenedEmoji} Pull Request Reopened", Color.Orange),
+            "ready_for_review"   => ($"{readyEmoji} PR Ready for Review",    Color.Green),
+            "converted_to_draft" => ($"{draftEmoji} PR Converted to Draft",  Color.LightGrey),
+            "closed_merged"      => ($"{mergedEmoji} Pull Request Merged",   Color.Purple),
+            "closed_unmerged"    => ($"{closedEmoji} Pull Request Closed",   Color.Red),
+            _                    => ("Pull Request",                         Color.Default),
         };
 
         var draftTag = pr.Draft ? " *(Draft)*" : "";

@@ -81,11 +81,15 @@ public class SlashCommandHandler
                         .WithDescription("The event to set a reaction for")
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Changes Requested", "changes_requested")
-                        .AddChoice("Approved", "approved")
-                        .AddChoice("Comment", "comment")
+                        .AddChoice("Opened", "opened")
+                        .AddChoice("Reopened", "reopened")
+                        .AddChoice("Ready for Review", "ready_for_review")
+                        .AddChoice("Converted to Draft", "converted_to_draft")
                         .AddChoice("Merged", "merged")
-                        .AddChoice("Closed", "closed"))
+                        .AddChoice("Closed", "closed")
+                        .AddChoice("Approved", "approved")
+                        .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Comment", "comment"))
                     .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
                     .Build(),
                 guildId);
@@ -99,11 +103,15 @@ public class SlashCommandHandler
                         .WithDescription("The event to clear")
                         .WithRequired(true)
                         .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Changes Requested", "changes_requested")
-                        .AddChoice("Approved", "approved")
-                        .AddChoice("Comment", "comment")
+                        .AddChoice("Opened", "opened")
+                        .AddChoice("Reopened", "reopened")
+                        .AddChoice("Ready for Review", "ready_for_review")
+                        .AddChoice("Converted to Draft", "converted_to_draft")
                         .AddChoice("Merged", "merged")
-                        .AddChoice("Closed", "closed"))
+                        .AddChoice("Closed", "closed")
+                        .AddChoice("Approved", "approved")
+                        .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Comment", "comment"))
                     .Build(),
                 guildId);
 
@@ -286,9 +294,13 @@ public class SlashCommandHandler
 
     private async Task HandleListReactions(SocketSlashCommand command)
     {
-        var keys = new[] { "merged", "closed", "approved", "changes_requested", "comment" };
+        var keys = new[] { "opened", "reopened", "ready_for_review", "converted_to_draft", "merged", "closed", "approved", "changes_requested", "comment" };
         var envKeys = new Dictionary<string, string>
         {
+            ["opened"]             = "Reactions:Opened",
+            ["reopened"]           = "Reactions:Reopened",
+            ["ready_for_review"]   = "Reactions:ReadyForReview",
+            ["converted_to_draft"] = "Reactions:ConvertedToDraft",
             ["merged"]             = "Reactions:Merged",
             ["closed"]             = "Reactions:Closed",
             ["approved"]           = "Reactions:Approved",
@@ -316,12 +328,16 @@ public class SlashCommandHandler
 
     private static string EventLabel(string eventKey) => eventKey switch
     {
-        "changes_requested" => "Changes Requested",
-        "approved"          => "Approved",
-        "comment"           => "Comment",
-        "merged"            => "Merged",
-        "closed"            => "Closed",
-        _                   => eventKey,
+        "opened"             => "Opened",
+        "reopened"           => "Reopened",
+        "ready_for_review"   => "Ready for Review",
+        "converted_to_draft" => "Converted to Draft",
+        "merged"             => "Merged",
+        "closed"             => "Closed",
+        "approved"           => "Approved",
+        "changes_requested"  => "Changes Requested",
+        "comment"            => "Comment",
+        _                    => eventKey,
     };
 
     private async Task BackfillMappingAsync(string githubLogin, string discordId)

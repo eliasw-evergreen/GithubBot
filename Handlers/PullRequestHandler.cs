@@ -64,9 +64,18 @@ public class PullRequestHandler : IGitHubEventHandler
         }
     }
 
+    private global::Discord.Embed BuildPrEmbed(PullRequest pr, Repository repo, string action)
+        => EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
+            openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
+            reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
+            readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
+            convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
+            mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
+            closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]));
+
     private async Task HandleOpenActions(string action, PullRequest pr, Repository repo, CancellationToken ct)
     {
-        var embed = EmbedBuilders.PrEmbed(pr, repo, action, _userMap);
+        var embed = BuildPrEmbed(pr, repo, action);
         var mention = _userMap.GitHubToDiscord(pr.User.Login) is string did ? $"<@{did}>" : $"**{pr.User.Login}**";
         var rolePing = _config["Roles:PrPing"];
         var rolePrefix = !string.IsNullOrEmpty(rolePing) ? $"<@&{rolePing}> " : "";
@@ -139,9 +148,7 @@ public class PullRequestHandler : IGitHubEventHandler
     {
         var merged = pr.Merged == true;
         var actionKey = merged ? "closed_merged" : "closed_unmerged";
-        var embed = EmbedBuilders.PrEmbed(pr, repo, actionKey, _userMap,
-            mergedReaction: _prefs.ResolveReaction("merged", _config["Reactions:Merged"]),
-            closedReaction: _prefs.ResolveReaction("closed", _config["Reactions:Closed"]));
+        var embed = BuildPrEmbed(pr, repo, actionKey);
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
 
@@ -245,8 +252,7 @@ public class PullRequestHandler : IGitHubEventHandler
         var content = originalMsg.Content;
         if (!content.StartsWith("[Closed]") && !content.StartsWith("[Merged]"))
         {
-            var updatedEmbed = EmbedBuilders.PrEmbed(pr, repo,
-                pr.Draft ? "converted_to_draft" : "opened", _userMap);
+            var updatedEmbed = BuildPrEmbed(pr, repo, pr.Draft ? "converted_to_draft" : "opened");
             await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, updatedEmbed);
         }
     }
