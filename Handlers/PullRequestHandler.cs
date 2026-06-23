@@ -146,10 +146,9 @@ public class PullRequestHandler : IGitHubEventHandler
                 var originalMsg = await _discord.GetMessageAsync(channel.Id, stored.MessageId);
                 if (originalMsg != null)
                 {
-                    var authorId = _userMap.GitHubToDiscord(pr.User.Login);
                     var reactionKey = merged ? "merged" : "closed";
-                    var serverDefault = merged ? _config["Reactions:Merged"] : _config["Reactions:Closed"];
-                    var reaction = _prefs.ResolveReaction(authorId, reactionKey, serverDefault);
+                    var envDefault = merged ? _config["Reactions:Merged"] : _config["Reactions:Closed"];
+                    var reaction = _prefs.ResolveReaction(reactionKey, envDefault);
                     if (!string.IsNullOrEmpty(reaction))
                         await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
 

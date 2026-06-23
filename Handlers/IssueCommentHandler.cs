@@ -59,8 +59,7 @@ public class IssueCommentHandler : IGitHubEventHandler
 
         if (stored != null && !isDeleted)
         {
-            var authorId = _userMap.GitHubToDiscord(pr.User.Login);
-            var reaction = _prefs.ResolveReaction(authorId, "comment", _config["Reactions:Comment"]);
+            var reaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
             if (!string.IsNullOrEmpty(reaction))
                 await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
         }

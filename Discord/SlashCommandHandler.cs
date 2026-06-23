@@ -250,11 +250,11 @@ public class SlashCommandHandler
         var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
         var emoji = ((string)command.Data.Options.First(o => o.Name == "emoji").Value).Trim();
 
-        _prefs.SetReaction(command.User.Id.ToString(), eventKey, emoji);
+        _prefs.SetReaction(eventKey, emoji);
 
         await command.RespondAsync(embeds: [new EmbedBuilder()
             .WithColor(Color.Green)
-            .WithDescription($"Your reaction for **{EventLabel(eventKey)}** is now set to {emoji}")
+            .WithDescription($"Reaction for **{EventLabel(eventKey)}** is now set to {emoji}")
             .WithCurrentTimestamp()
             .Build()], ephemeral: true);
     }
@@ -263,11 +263,11 @@ public class SlashCommandHandler
     {
         var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
 
-        _prefs.ClearReaction(command.User.Id.ToString(), eventKey);
+        _prefs.ClearReaction(eventKey);
 
         await command.RespondAsync(embeds: [new EmbedBuilder()
             .WithColor(Color.Orange)
-            .WithDescription($"Your reaction override for **{EventLabel(eventKey)}** has been cleared — server default will be used.")
+            .WithDescription($"Reaction override for **{EventLabel(eventKey)}** cleared — .env value will be used.")
             .WithCurrentTimestamp()
             .Build()], ephemeral: true);
     }

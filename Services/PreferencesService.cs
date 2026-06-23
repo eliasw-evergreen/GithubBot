@@ -2,15 +2,10 @@ using System.Text.Json;
 
 namespace GithubBot.Services;
 
-public class UserPreferences
-{
-    public Dictionary<string, string> Reactions { get; set; } = [];
-}
-
 public class PreferencesService
 {
     private readonly string _filePath;
-    private Dictionary<string, UserPreferences> _prefs = [];
+    private Dictionary<string, string> _reactions = [];
 
     public PreferencesService(string filePath)
     {
@@ -23,62 +18,54 @@ public class PreferencesService
         try
         {
             var json = File.ReadAllText(_filePath);
-            _prefs = JsonSerializer.Deserialize<Dictionary<string, UserPreferences>>(json) ?? [];
+            var data = JsonSerializer.Deserialize<PreferencesData>(json);
+            _reactions = data?.Reactions ?? [];
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            _prefs = [];
+            _reactions = [];
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[PreferencesService] Failed to load {_filePath}: {ex.Message}");
-            _prefs = [];
+            _reactions = [];
         }
     }
 
     private void Save()
     {
-        var json = JsonSerializer.Serialize(_prefs, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(new PreferencesData { Reactions = _reactions },
+            new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
 
-    public string? GetReaction(string discordId, string eventKey)
+    public string? GetReaction(string eventKey)
     {
-        if (!_prefs.TryGetValue(discordId, out var prefs)) return null;
-        prefs.Reactions.TryGetValue(eventKey, out var reaction);
+        _reactions.TryGetValue(eventKey, out var reaction);
         return string.IsNullOrEmpty(reaction) ? null : reaction;
     }
 
-    public void SetReaction(string discordId, string eventKey, string reaction)
+    public void SetReaction(string eventKey, string reaction)
     {
-        if (!_prefs.TryGetValue(discordId, out var prefs))
-            _prefs[discordId] = prefs = new UserPreferences();
-        prefs.Reactions[eventKey] = reaction;
+        _reactions[eventKey] = reaction;
         Save();
     }
 
-    public void ClearReaction(string discordId, string eventKey)
+    public void ClearReaction(string eventKey)
     {
-        if (!_prefs.TryGetValue(discordId, out var prefs)) return;
-        prefs.Reactions.Remove(eventKey);
-        if (prefs.Reactions.Count == 0)
-            _prefs.Remove(discordId);
+        _reactions.Remove(eventKey);
         Save();
     }
 
-    public string? ResolveReaction(string? discordId, string eventKey, string? serverDefault)
+    public string? ResolveReaction(string eventKey, string? envDefault)
     {
-        if (discordId != null)
-        {
-            var pref = GetReaction(discordId, eventKey);
-            if (pref != null) return pref;
-        }
-        return string.IsNullOrEmpty(serverDefault) ? null : serverDefault;
+        var pref = GetReaction(eventKey);
+        if (pref != null) return pref;
+        return string.IsNullOrEmpty(envDefault) ? null : envDefault;
     }
 
-    public UserPreferences? GetAll(string discordId)
+    private class PreferencesData
     {
-        _prefs.TryGetValue(discordId, out var prefs);
-        return prefs;
+        public Dictionary<string, string> Reactions { get; set; } = [];
     }
 }
