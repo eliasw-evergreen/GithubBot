@@ -52,9 +52,6 @@ var envMap = new Dictionary<string, string?>
 };
 
 builder.Configuration
-    .SetBasePath(builder.Environment.ContentRootPath)
-    .AddJsonFile("appsettings.json", optional: false)
-    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
     .AddInMemoryCollection(envMap.Where(kv => kv.Value != null))
     .AddEnvironmentVariables();
 
