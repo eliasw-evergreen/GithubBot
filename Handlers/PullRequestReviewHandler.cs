@@ -40,7 +40,9 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var pr = payload.GetProperty("pull_request").Deserialize<PullRequest>()!;
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
 
-        var embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap);
+        var embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap,
+            approvedReaction: _prefs.ResolveReaction("approved", _config["Reactions:Approved"]),
+            changesReaction:  _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]));
 
         var pings = new List<string>();
         if (review.State == "changes_requested" || review.State == "approved")

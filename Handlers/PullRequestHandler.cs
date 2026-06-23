@@ -139,7 +139,9 @@ public class PullRequestHandler : IGitHubEventHandler
     {
         var merged = pr.Merged == true;
         var actionKey = merged ? "closed_merged" : "closed_unmerged";
-        var embed = EmbedBuilders.PrEmbed(pr, repo, actionKey, _userMap);
+        var embed = EmbedBuilders.PrEmbed(pr, repo, actionKey, _userMap,
+            mergedReaction: _prefs.ResolveReaction("merged", _config["Reactions:Merged"]),
+            closedReaction: _prefs.ResolveReaction("closed", _config["Reactions:Closed"]));
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
 

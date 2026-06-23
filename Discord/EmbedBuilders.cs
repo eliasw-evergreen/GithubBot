@@ -6,17 +6,21 @@ namespace GithubBot.Discord;
 
 public static class EmbedBuilders
 {
-    public static Embed PrEmbed(PullRequest pr, Repository repo, string action, UserMapService userMap)
+    public static Embed PrEmbed(PullRequest pr, Repository repo, string action, UserMapService userMap,
+        string? mergedReaction = null, string? closedReaction = null)
     {
+        var mergedEmoji  = ReactionEmoji(mergedReaction) ?? "🟣";
+        var closedEmoji  = ReactionEmoji(closedReaction) ?? "🔴";
+
         var (title, color) = action switch
         {
-            "opened"             => ("🔀 Pull Request Opened",             Color.Green),
-            "reopened"           => ("🔁 Pull Request Reopened",           Color.Orange),
-            "ready_for_review"   => ("✅ PR Ready for Review",             Color.Green),
-            "converted_to_draft" => ("📝 PR Converted to Draft",           Color.LightGrey),
-            "closed_merged"      => ("🟣 Pull Request Merged",             Color.Purple),
-            "closed_unmerged"    => ("🔴 Pull Request Closed",             Color.Red),
-            _                    => ("Pull Request",                       Color.Default),
+            "opened"             => ("🔀 Pull Request Opened",                        Color.Green),
+            "reopened"           => ("🔁 Pull Request Reopened",                      Color.Orange),
+            "ready_for_review"   => ("✅ PR Ready for Review",                        Color.Green),
+            "converted_to_draft" => ("📝 PR Converted to Draft",                      Color.LightGrey),
+            "closed_merged"      => ($"{mergedEmoji} Pull Request Merged",            Color.Purple),
+            "closed_unmerged"    => ($"{closedEmoji} Pull Request Closed",            Color.Red),
+            _                    => ("Pull Request",                                  Color.Default),
         };
 
         var draftTag = pr.Draft ? " *(Draft)*" : "";
@@ -113,12 +117,16 @@ public static class EmbedBuilders
             .Build();
     }
 
-    public static Embed ReviewSubmittedEmbed(Review review, PullRequest pr, Repository repo, UserMapService userMap)
+    public static Embed ReviewSubmittedEmbed(Review review, PullRequest pr, Repository repo, UserMapService userMap,
+        string? approvedReaction = null, string? changesReaction = null)
     {
+        var approvedEmoji = ReactionEmoji(approvedReaction) ?? "✅";
+        var changesEmoji  = ReactionEmoji(changesReaction)  ?? "🔄";
+
         var stateLabel = review.State switch
         {
-            "approved"          => "✅ Approved",
-            "changes_requested" => "🔄 Changes Requested",
+            "approved"          => $"{approvedEmoji} Approved",
+            "changes_requested" => $"{changesEmoji} Changes Requested",
             "commented"         => "💬 Reviewed",
             _                   => $"📝 Review {review.State}",
         };
@@ -166,4 +174,13 @@ public static class EmbedBuilders
 
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
+
+    // Converts a reaction config value to something usable in embed text.
+    // <:name:id> → :name:  |  unicode → as-is  |  null/empty → null
+    private static string? ReactionEmoji(string? reaction)
+    {
+        if (string.IsNullOrEmpty(reaction)) return null;
+        var match = System.Text.RegularExpressions.Regex.Match(reaction, @"<a?:(\w+):\d+>");
+        return match.Success ? $":{match.Groups[1].Value}:" : reaction.Trim();
+    }
 }
