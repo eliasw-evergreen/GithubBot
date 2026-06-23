@@ -11,6 +11,7 @@ public class SlashCommandHandler
     private readonly UserMapService _userMap;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
+    private readonly bool _noAuth;
 
     public SlashCommandHandler(
         DiscordSocketClient client,
@@ -22,6 +23,7 @@ public class SlashCommandHandler
         _userMap = userMap;
         _config = config;
         _logger = logger;
+        _noAuth = config.GetValue<bool>("NoAuth");
     }
 
     public async Task RegisterAsync()
@@ -74,13 +76,16 @@ public class SlashCommandHandler
     {
         if (interaction is not SocketSlashCommand command) return;
 
-        var configRole = _config["Roles:Config"];
-        if (!string.IsNullOrEmpty(configRole) && ulong.TryParse(configRole, out var roleId))
+        if (!_noAuth)
         {
-            if (command.User is SocketGuildUser guildUser && !guildUser.Roles.Any(r => r.Id == roleId))
+            var configRole = _config["Roles:Config"];
+            if (!string.IsNullOrEmpty(configRole) && ulong.TryParse(configRole, out var roleId))
             {
-                await command.RespondAsync("You do not have permission to use this command.", ephemeral: true);
-                return;
+                if (command.User is SocketGuildUser guildUser && !guildUser.Roles.Any(r => r.Id == roleId))
+                {
+                    await command.RespondAsync("You do not have permission to use this command.", ephemeral: true);
+                    return;
+                }
             }
         }
 
