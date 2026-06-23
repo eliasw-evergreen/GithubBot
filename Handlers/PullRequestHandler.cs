@@ -99,7 +99,7 @@ public class PullRequestHandler : IGitHubEventHandler
                 if (originalMsg != null)
                 {
                     await _discord.EditMessageAsync(channel.Id, stored.MessageId,
-                        $"{rolePrefix}{mention} opened a PR in **{repo.Name}**", embed);
+                        $"{rolePrefix}{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed);
 
                     await _discord.ClearReactionsAsync(channel.Id, stored.MessageId,
                         _config["Reactions:Merged"], _config["Reactions:Closed"], ct);
@@ -135,7 +135,7 @@ public class PullRequestHandler : IGitHubEventHandler
             return;
         }
 
-        var msg = await _discord.SendMessageAsync(channel.Id, $"{rolePrefix}{mention} opened a PR in **{repo.Name}**", embed, ct);
+        var msg = await _discord.SendMessageAsync(channel.Id, $"{rolePrefix}{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed, ct);
         if (msg != null)
         {
             var threadId = await _discord.CreateThreadAsync(channel.Id, msg.Id,
