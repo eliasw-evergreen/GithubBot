@@ -8,28 +8,27 @@ namespace GithubBot.Discord;
 public class SlashCommandHandler
 {
     private readonly DiscordSocketClient _client;
-    private readonly DiscordBotService _discord;
     private readonly UserMapService _userMap;
     private readonly PrMapService _prMap;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
+    private readonly ulong _channelId;
 
     public SlashCommandHandler(
         DiscordSocketClient client,
-        DiscordBotService discord,
         UserMapService userMap,
         PrMapService prMap,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
         _client = client;
-        _discord = discord;
         _userMap = userMap;
         _prMap = prMap;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
+        _channelId = ulong.TryParse(config["Discord:ChannelId"], out var id) ? id : 0;
     }
 
     public async Task RegisterAsync()
@@ -208,15 +207,19 @@ public class SlashCommandHandler
     {
         try
         {
+            if (_channelId == 0) return;
             var oldText = $"**{githubLogin}**";
             var newText = $"<@{discordId}>";
 
-            var channel = await _discord.GetChannelAsync();
+            var channel = _client.GetChannel(_channelId) as IMessageChannel;
             if (channel == null) return;
 
             foreach (var (_, entry) in _prMap.GetAll())
             {
-                var msg = await _discord.GetMessageAsync(channel.Id, entry.MessageId);
+                IMessage? msg;
+                try { msg = await channel.GetMessageAsync(entry.MessageId); }
+                catch { continue; }
+
                 if (msg?.Embeds == null || msg.Embeds.Count == 0) continue;
 
                 var embed = msg.Embeds.First();
@@ -224,7 +227,14 @@ public class SlashCommandHandler
 
                 var updated = ReplaceInEmbed(embed, oldText, newText);
                 var newContent = msg.Content?.Replace(oldText, newText);
-                await _discord.EditMessageAsync(channel.Id, entry.MessageId, newContent, updated);
+
+                if (msg is IUserMessage userMsg)
+                    await userMsg.ModifyAsync(props =>
+                    {
+                        if (newContent != null) props.Content = newContent;
+                        props.Embeds = new[] { updated };
+                    });
+
                 _logger.LogInformation("[Backfill] Updated message {MsgId} for {Login}", entry.MessageId, githubLogin);
             }
         }
