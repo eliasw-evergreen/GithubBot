@@ -89,6 +89,8 @@ public class SlashCommandHandler
                         .AddChoice("Closed", "closed")
                         .AddChoice("Approved", "approved")
                         .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Review Requested", "review_requested")
+                        .AddChoice("Assigned", "assigned")
                         .AddChoice("Comment", "comment"))
                     .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
                     .Build(),
@@ -111,6 +113,8 @@ public class SlashCommandHandler
                         .AddChoice("Closed", "closed")
                         .AddChoice("Approved", "approved")
                         .AddChoice("Changes Requested", "changes_requested")
+                        .AddChoice("Review Requested", "review_requested")
+                        .AddChoice("Assigned", "assigned")
                         .AddChoice("Comment", "comment"))
                     .Build(),
                 guildId);
@@ -294,7 +298,7 @@ public class SlashCommandHandler
 
     private async Task HandleListReactions(SocketSlashCommand command)
     {
-        var keys = new[] { "opened", "reopened", "ready_for_review", "converted_to_draft", "merged", "closed", "approved", "changes_requested", "comment" };
+        var keys = new[] { "opened", "reopened", "ready_for_review", "converted_to_draft", "merged", "closed", "approved", "changes_requested", "review_requested", "assigned", "comment" };
         var envKeys = new Dictionary<string, string>
         {
             ["opened"]             = "Reactions:Opened",
@@ -305,6 +309,8 @@ public class SlashCommandHandler
             ["closed"]             = "Reactions:Closed",
             ["approved"]           = "Reactions:Approved",
             ["changes_requested"]  = "Reactions:ChangesRequested",
+            ["review_requested"]   = "Reactions:ReviewRequested",
+            ["assigned"]           = "Reactions:Assigned",
             ["comment"]            = "Reactions:Comment",
         };
 
@@ -336,6 +342,8 @@ public class SlashCommandHandler
         "closed"             => "Closed",
         "approved"           => "Approved",
         "changes_requested"  => "Changes Requested",
+        "review_requested"   => "Review Requested",
+        "assigned"           => "Assigned",
         "comment"            => "Comment",
         _                    => eventKey,
     };

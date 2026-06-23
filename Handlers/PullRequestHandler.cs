@@ -208,7 +208,8 @@ public class PullRequestHandler : IGitHubEventHandler
         if (reviewers.Count == 0) return;
 
         var sender = payload.GetProperty("sender").Deserialize<GitHubUser>()!;
-        var embed = EmbedBuilders.ReviewRequestEmbed(pr, repo, reviewers, sender, _userMap);
+        var embed = EmbedBuilders.ReviewRequestEmbed(pr, repo, reviewers, sender, _userMap,
+            _prefs.ResolveReaction("review_requested", _config["Reactions:ReviewRequested"]));
         var pings = reviewers
             .Select(r => _userMap.GitHubToDiscord(r.Login))
             .Where(id => id != null)
@@ -227,7 +228,8 @@ public class PullRequestHandler : IGitHubEventHandler
         var assignee = payload.TryGetProperty("assignee", out var a) ? a.Deserialize<GitHubUser>() : pr.Assignee;
         if (assignee == null) return;
 
-        var embed = EmbedBuilders.AssignedEmbed(pr, repo, assignee, _userMap);
+        var embed = EmbedBuilders.AssignedEmbed(pr, repo, assignee, _userMap,
+            _prefs.ResolveReaction("assigned", _config["Reactions:Assigned"]));
         var ping = _userMap.GitHubToDiscord(assignee.Login);
         var content = ping != null ? $"<@{ping}>" : null;
 

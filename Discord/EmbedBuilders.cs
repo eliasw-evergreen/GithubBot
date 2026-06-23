@@ -108,13 +108,14 @@ public static class EmbedBuilders
         return embed.Build();
     }
 
-    public static Embed ReviewRequestEmbed(PullRequest pr, Repository repo, List<GitHubUser> reviewers, GitHubUser sender, UserMapService userMap)
+    public static Embed ReviewRequestEmbed(PullRequest pr, Repository repo, List<GitHubUser> reviewers, GitHubUser sender, UserMapService userMap, string? reviewRequestedReaction = null)
     {
         var reviewerNames = string.Join(", ", reviewers.Select(r => $"**{r.Login}**"));
         var requester = Mention(userMap, sender.Login);
+        var emoji = ReactionEmoji(reviewRequestedReaction) ?? "👀";
 
         return new EmbedBuilder()
-            .WithTitle("👀 Review Requested")
+            .WithTitle($"{emoji} Review Requested")
             .WithUrl(pr.HtmlUrl)
             .WithColor(Color.Gold)
             .AddField("Pull Request", $"[#{pr.Number} — {pr.Title}]({pr.HtmlUrl})")
@@ -161,10 +162,11 @@ public static class EmbedBuilders
             .Build();
     }
 
-    public static Embed AssignedEmbed(PullRequest pr, Repository repo, GitHubUser assignee, UserMapService userMap)
+    public static Embed AssignedEmbed(PullRequest pr, Repository repo, GitHubUser assignee, UserMapService userMap, string? assignedReaction = null)
     {
+        var emoji = ReactionEmoji(assignedReaction) ?? "👤";
         return new EmbedBuilder()
-            .WithTitle("👤 Assigned")
+            .WithTitle($"{emoji} Assigned")
             .WithUrl(pr.HtmlUrl)
             .WithColor(new Color(0x5865F2))
             .AddField("Pull Request", $"[#{pr.Number} — {pr.Title}]({pr.HtmlUrl})")
