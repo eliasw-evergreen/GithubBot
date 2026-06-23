@@ -170,6 +170,12 @@ public class DiscordBotService : IHostedService
         await msg.AddReactionAsync(emote);
     }
 
+    private static bool EmotesMatch(IEmote a, IEmote b)
+    {
+        if (a is Emote ea && b is Emote eb) return ea.Id == eb.Id;
+        return a.Name == b.Name;
+    }
+
     private static IEmote ParseEmote(string reaction)
     {
         // <:name:id> or <a:name:id>
@@ -193,13 +199,13 @@ public class DiscordBotService : IHostedService
         var msg = await channel.GetMessageAsync(messageId) as IUserMessage;
         if (msg == null) return;
 
+        var toMatch = new List<IEmote>();
+        if (!string.IsNullOrEmpty(mergedReaction)) toMatch.Add(ParseEmote(mergedReaction));
+        if (!string.IsNullOrEmpty(closedReaction))  toMatch.Add(ParseEmote(closedReaction));
+
         foreach (var reaction in msg.Reactions)
         {
-            var emoteId = reaction.Key is Emote emote ? emote.Id.ToString() : null;
-            var emoteName = reaction.Key is Emoji emoji ? emoji.Name : null;
-
-            if ((mergedReaction != null && emoteId == mergedReaction)
-                || (closedReaction != null && (emoteId == closedReaction || emoteName == closedReaction)))
+            if (toMatch.Any(e => EmotesMatch(e, reaction.Key)))
             {
                 await msg.RemoveReactionAsync(reaction.Key, _client.CurrentUser);
             }
