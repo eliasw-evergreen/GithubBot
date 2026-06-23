@@ -166,10 +166,23 @@ public class DiscordBotService : IHostedService
         var msg = await channel.GetMessageAsync(messageId);
         if (msg == null) return;
 
-        if (ulong.TryParse(reaction, out var emojiId))
-            await msg.AddReactionAsync(new Emote(emojiId, ""));
-        else
-            await msg.AddReactionAsync(new Emoji(reaction));
+        IEmote emote = ParseEmote(reaction);
+        await msg.AddReactionAsync(emote);
+    }
+
+    private static IEmote ParseEmote(string reaction)
+    {
+        // <:name:id> or <a:name:id>
+        var match = System.Text.RegularExpressions.Regex.Match(reaction, @"<a?:(\w+):(\d+)>");
+        if (match.Success && ulong.TryParse(match.Groups[2].Value, out var emoteId))
+            return new Emote(emoteId, match.Groups[1].Value);
+
+        // bare numeric ID
+        if (ulong.TryParse(reaction.Trim(), out var bareId))
+            return new Emote(bareId, "");
+
+        // unicode emoji
+        return new Emoji(reaction);
     }
 
     public async Task ClearReactionsAsync(ulong channelId, ulong messageId, string? mergedReaction, string? closedReaction, CancellationToken ct = default)
