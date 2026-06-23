@@ -55,11 +55,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
         {
             var reaction = _config["Reactions:Comment"];
             if (!string.IsNullOrEmpty(reaction))
-            {
-                var originalMsg = await channel.GetMessageAsync(stored.MessageId);
-                if (originalMsg != null)
-                    await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
-            }
+                await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
         }
     }
 

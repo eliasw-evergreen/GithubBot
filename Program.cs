@@ -52,7 +52,7 @@ builder.Configuration
     .AddInMemoryCollection(envMap.Where(kv => kv.Value != null))
     .AddEnvironmentVariables();
 
-var port = builder.Configuration.GetValue<int>("Port");
+var port = builder.Configuration.GetValue<int?>("Port") ?? 3000;
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // Use repo root for data files (shared with JS version)

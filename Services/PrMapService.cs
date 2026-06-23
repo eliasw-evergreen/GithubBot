@@ -27,8 +27,13 @@ public class PrMapService
             var json = File.ReadAllText(_filePath);
             _map = JsonSerializer.Deserialize<Dictionary<string, PrMapEntry>>(json) ?? [];
         }
-        catch
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
+            _map = [];
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PrMapService] Failed to load {_filePath}: {ex.Message}");
             _map = [];
         }
     }

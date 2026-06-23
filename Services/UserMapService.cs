@@ -20,8 +20,13 @@ public class UserMapService
             var json = File.ReadAllText(_filePath);
             _cache = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json) ?? [];
         }
-        catch
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
+            _cache = [];
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[UserMapService] Failed to load {_filePath}: {ex.Message}");
             _cache = [];
         }
         return _cache;

@@ -65,18 +65,18 @@ public class DiscordBotService : IHostedService
         await _slashHandler.RegisterAsync();
     }
 
-    public async Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
+    public Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
     {
-        if (_channelId == 0) return null;
-        return _client.GetChannel(_channelId) as IMessageChannel;
+        if (_channelId == 0) return Task.FromResult<IMessageChannel?>(null);
+        return Task.FromResult(_client.GetChannel(_channelId) as IMessageChannel);
     }
 
-    public async Task<IMessageChannel?> GetTargetChannel(IMessageChannel channel, PrMapEntry? stored, CancellationToken ct = default)
+    public Task<IMessageChannel?> GetTargetChannel(IMessageChannel channel, PrMapEntry? stored, CancellationToken ct = default)
     {
-        if (stored?.ThreadId == null || stored.ThreadId == 0) return channel;
+        if (stored?.ThreadId == null || stored.ThreadId == 0) return Task.FromResult<IMessageChannel?>(channel);
 
         var thread = _client.GetChannel(stored.ThreadId.Value) as IMessageChannel;
-        return thread ?? channel;
+        return Task.FromResult(thread ?? channel);
     }
 
     public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed embed, CancellationToken ct = default)
