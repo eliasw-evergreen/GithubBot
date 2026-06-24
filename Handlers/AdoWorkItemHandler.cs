@@ -42,12 +42,6 @@ public class AdoWorkItemHandler
         AddStandardFields(embed, wi, showDescription: true);
 
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
-        if (wi.WorkItemType == "Bug")
-        {
-            var resource = payload.GetProperty("resource");
-            if (resource.TryGetProperty("revision", out var rev) && rev.TryGetProperty("fields", out var allF))
-                _logger.LogInformation("[ADO] Bug fields: {Fields}", string.Join(", ", allF.EnumerateObject().Select(p => p.Name)));
-        }
         string? creatorDiscordId = !string.IsNullOrEmpty(wi.CreatedByEmail) ? _userMap.AdoToDiscord(wi.CreatedByEmail) : null;
         if (creatorDiscordId != null)
             _scores.Award(creatorDiscordId, ScoreCategory.TicketCreated);
@@ -168,12 +162,6 @@ public class AdoWorkItemHandler
         }
 
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
-        if (wi.WorkItemType == "Bug")
-        {
-            var resource2 = payload.GetProperty("resource");
-            if (resource2.TryGetProperty("revision", out var rev2) && rev2.TryGetProperty("fields", out var allF2))
-                _logger.LogInformation("[ADO] Bug fields: {Fields}", string.Join(", ", allF2.EnumerateObject().Select(p => p.Name)));
-        }
 
         // Resolve thread first — this populates workItemMap for previously untracked tickets
         var target = await ResolveThreadAsync(channelId, wi, ct);
@@ -394,7 +382,10 @@ public class AdoWorkItemHandler
         string? CreatedByEmail,
         string? ChangedByEmail,
         string? Url,
-        Color Color);
+        Color Color,
+        string? ReproSteps = null,
+        string? ExpectedOutcome = null,
+        string? ActualOutcome = null);
 
     private bool TryGetChannel(out ulong channelId)
     {
@@ -445,7 +436,10 @@ public class AdoWorkItemHandler
             CreatedByEmail:   Email(fields, "System.CreatedBy"),
             ChangedByEmail:   Email(fields, "System.ChangedBy"),
             Url:              BuildWorkItemUrl(payload, id),
-            Color:            color);
+            Color:            color,
+            ReproSteps:       Str(fields, "Microsoft.VSTS.TCM.ReproSteps"),
+            ExpectedOutcome:  Str(fields, "Custom.ExpectedOutcome"),
+            ActualOutcome:    Str(fields, "Custom.ActualOutcome"));
         return true;
     }
 
@@ -478,6 +472,19 @@ public class AdoWorkItemHandler
             if (plain.Length > 300) plain = plain[..300] + "…";
             if (!string.IsNullOrWhiteSpace(plain))
                 embed.WithDescription(plain);
+        }
+        if (wi.WorkItemType == "Bug")
+        {
+            void AddBugField(string label, string? raw)
+            {
+                var text = StripHtml(raw);
+                if (string.IsNullOrWhiteSpace(text)) return;
+                if (text.Length > 500) text = text[..497] + "…";
+                embed.AddField(label, text);
+            }
+            AddBugField("Steps to Reproduce", wi.ReproSteps);
+            AddBugField("Expected Outcome", wi.ExpectedOutcome);
+            AddBugField("Actual Outcome", wi.ActualOutcome);
         }
     }
 
