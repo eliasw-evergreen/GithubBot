@@ -157,7 +157,11 @@ public class SlashCommandHandler
             };
 
             await rest.BulkOverwriteGuildCommands(commands, guildId,
-                new global::Discord.RequestOptions { Timeout = 90000 });
+                new global::Discord.RequestOptions
+                {
+                    Timeout = 90000,
+                    RetryMode = global::Discord.RetryMode.RetryRatelimit,
+                });
             _prefs.SetCommandsVersion(CommandsVersion);
             _logger.LogInformation("Slash commands registered ({Version})", CommandsVersion);
         }

@@ -87,6 +87,8 @@ builder.Services.AddSession(o =>
 builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
 {
     GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,
+    // Respect Retry-After / X-RateLimit-Reset-After headers on all requests
+    DefaultRetryMode = Discord.RetryMode.RetryRatelimit,
 }));
 builder.Services.AddSingleton<DiscordBotService>();
 builder.Services.AddSingleton<SlashCommandHandler>();
