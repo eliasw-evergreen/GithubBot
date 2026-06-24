@@ -105,9 +105,11 @@ public class AdoWorkItemHandler
             foreach (var prop in changedFields.EnumerateObject())
             {
                 if (skipFields.Contains(prop.Name)) continue;
-                var oldVal = prop.Value.TryGetProperty("oldValue", out var ov) ? StripHtml(FormatFieldValue(ov)) : null;
-                var newVal = prop.Value.TryGetProperty("newValue", out var nv) ? StripHtml(FormatFieldValue(nv)) : null;
-                if (string.IsNullOrEmpty(newVal) || oldVal == newVal) continue;
+                var oldRaw = prop.Value.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
+                var newRaw = prop.Value.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
+                if (string.IsNullOrEmpty(newRaw) || oldRaw == newRaw) continue;
+                var oldVal = StripHtml(oldRaw);
+                var newVal = StripHtml(newRaw);
                 var label = friendlyNames.TryGetValue(prop.Name, out var fn)
                     ? fn
                     : prop.Name.Contains('.') ? prop.Name[(prop.Name.LastIndexOf('.') + 1)..] : prop.Name;
