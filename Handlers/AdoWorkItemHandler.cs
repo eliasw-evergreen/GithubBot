@@ -127,7 +127,7 @@ public class AdoWorkItemHandler
             .WithUrl(wi.Url);
 
         foreach (var (label, value) in fieldLines)
-            embed.AddField(label, value, inline: true);
+            embed.AddField(label, value.Length > 1024 ? value[..1021] + "…" : value, inline: true);
 
         if (!string.IsNullOrWhiteSpace(wi.ChangedByEmail))
         {
