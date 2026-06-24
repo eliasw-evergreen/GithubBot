@@ -183,7 +183,12 @@ public static class ConfigUiHtml
         RoleRow("Config UI Role", currentConfigRole, configRoleSource, "/config/ui/setconfigrole", "/config/ui/clearconfigrole");
         RoleRow("Command Role", currentCommandRole, commandRoleSource, "/config/ui/setcommandrole", "/config/ui/clearcommandrole");
 
-        // PR desc max lines row
+        sb.Append("</tbody></table>");
+
+        // ── Embed Style ─────────────────────────────────────────────────────
+        sb.Append("<h2>Embed Style</h2>");
+        sb.Append("<table><thead><tr><th>Setting</th><th>Current</th><th>Set</th><th></th></tr></thead><tbody>");
+
         sb.Append($"""
             <tr><td>PR Description Max Lines</td><td><span class="reaction-val">{prDescMaxLines?.ToString() ?? "10 (default)"}</span></td><td>
             <form method="post" action="/config/ui/setprdescmaxlines" class="f">
