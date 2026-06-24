@@ -166,25 +166,12 @@ public class AdoWorkItemHandler
         // Resolve thread first — this populates workItemMap for previously untracked tickets
         var target = await ResolveThreadAsync(channelId, wi, ct);
 
-        // Fields reflected in the original embed — update it in-place when any of these change
-        var embedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "System.Title", "System.Description", "System.State",
-            "System.AssignedTo", "System.AreaPath", "System.IterationPath",
-            "Microsoft.VSTS.Common.Priority", "Microsoft.VSTS.Common.Severity",
-        };
-
-        var hasEmbedChanges = changedFields.ValueKind == JsonValueKind.Object &&
-            changedFields.EnumerateObject().Any(p => embedFields.Contains(p.Name));
-
         var stored = _workItemMap.Get(wi.Id);
-        _logger.LogInformation("[ADO] Update in-place check: hasEmbedChanges={HasEmbed} stored={Stored}", hasEmbedChanges, stored?.MessageId.ToString() ?? "null");
-        if (hasEmbedChanges && stored != null)
+        if (stored != null)
         {
             // wi has the full current state from resource.revision.fields — rebuild the embed from it
             var updatedEmbed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
             AddStandardFields(updatedEmbed, wi, showDescription: true);
-            _logger.LogInformation("[ADO] Editing message {MsgId} in channel {ChannelId}", stored.MessageId, channelId);
             await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
 
             if (wi.Title != null && wi.Title != stored.Title)
