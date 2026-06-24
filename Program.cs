@@ -54,6 +54,7 @@ var envMap = new Dictionary<string, string?>
     ["Roles:Config"] = Env.GetString("CONFIG_ROLE"),
     ["PruneDays"] = Env.GetString("PRUNE_DAYS"),
     ["Port"] = Env.GetString("PORT"),
+    ["PublicHost"] = Env.GetString("PUBLIC_HOST"),
     ["Discord:TicketChannelId"] = Env.GetString("DISCORD_TICKET_CHANNEL_ID"),
     ["AzureDevOps:WebhookSecret"] = Env.GetString("ADO_WEBHOOK_SECRET"),
 };
