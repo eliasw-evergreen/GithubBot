@@ -79,6 +79,7 @@ builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "pre
 builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
 builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulette.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
+builder.Services.AddSingleton<GithubBot.Handlers.AdoWorkItemHandler>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(o =>
 {
@@ -205,9 +206,38 @@ app.MapPost("/adowebhook", async (HttpContext context) =>
             return Results.Unauthorized();
     }
 
-    // TODO: parse eventType from payload (e.g. workitem.updated, build.complete)
-    // TODO: dispatch to ADO event handlers
-    appLogger.LogInformation("ADO webhook received (stub)");
+    context.Request.EnableBuffering();
+    using var adoReader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
+    var adoBody = await adoReader.ReadToEndAsync();
+    context.Request.Body.Position = 0;
+
+    string adoEventType;
+    JsonElement adoPayload;
+    try
+    {
+        using var adoDoc = JsonDocument.Parse(adoBody);
+        adoEventType = adoDoc.RootElement.TryGetProperty("eventType", out var et) ? et.GetString() ?? "" : "";
+        adoPayload = adoDoc.RootElement.Clone();
+    }
+    catch (Exception ex)
+    {
+        appLogger.LogError(ex, "ADO webhook: failed to parse payload");
+        return Results.BadRequest("Invalid JSON");
+    }
+
+    appLogger.LogInformation("ADO webhook received eventType={EventType}", adoEventType);
+
+    try
+    {
+        var adoHandler = app.Services.GetRequiredService<GithubBot.Handlers.AdoWorkItemHandler>();
+        if (adoEventType == "workitem.created")
+            await adoHandler.HandleWorkItemCreatedAsync(adoPayload);
+    }
+    catch (Exception ex)
+    {
+        appLogger.LogError(ex, "ADO webhook error eventType={EventType}", adoEventType);
+    }
+
     return Results.Ok("ok");
 });
 
