@@ -46,6 +46,11 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var pr = payload.GetProperty("pull_request").Deserialize<PullRequest>()!;
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
 
+        // A "commented" review with no body means the user only left inline comments;
+        // those are handled by PullRequestReviewCommentHandler — skip to avoid double-posting.
+        if (review.State == "commented" && string.IsNullOrWhiteSpace(review.Body))
+            return;
+
         var embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap,
             approvedReaction: _prefs.ResolveReaction("approved", _config["Reactions:Approved"]),
             changesReaction:  _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]));
