@@ -444,7 +444,19 @@ public class AdoWorkItemHandler
         if (!fields.TryGetProperty(key, out var el)) return null;
         if (el.ValueKind == JsonValueKind.Object)
             return el.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
-        return el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+        if (el.ValueKind == JsonValueKind.String)
+        {
+            var s = el.GetString() ?? "";
+            // ADO sometimes sends "Display Name email@domain.com" as a plain string
+            var lastSpace = s.LastIndexOf(' ');
+            if (lastSpace >= 0)
+            {
+                var tail = s.Substring(lastSpace + 1);
+                if (tail.Contains('@')) return tail;
+            }
+            return s;
+        }
+        return null;
     }
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch
