@@ -58,20 +58,16 @@ public class PullRequestReviewHandler : IGitHubEventHandler
             approvedReaction: _prefs.ResolveReaction("approved", _config["Reactions:Approved"]),
             changesReaction:  _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]));
 
-        _logger.LogInformation("[ReviewHandler] action={Action} reviewId={ReviewId} prNodeId={PrNodeId} prHtmlUrl={PrHtmlUrl}",
-            action, review.Id, pr.NodeId, pr.HtmlUrl);
-
         // Edit in-place if we have a record of this review
         if (action == "edited")
         {
             var existing = _reviewMap.Get(review.Id);
             if (existing != null)
             {
-                _logger.LogInformation("[ReviewHandler] Editing existing message {MsgId}", existing.MessageId);
                 await _discord.EditMessageAsync(existing.ChannelId, existing.MessageId, null, embed);
                 return;
             }
-            _logger.LogInformation("[ReviewHandler] Review {ReviewId} not in reviewmap, posting as new", review.Id);
+            // Fall through to post as new if not tracked
         }
 
         var pings = new List<string>();
@@ -83,11 +79,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         }
 
         var channel = await _discord.GetChannelAsync(ct);
-        if (channel == null)
-        {
-            _logger.LogWarning("[ReviewHandler] No channel configured, aborting");
-            return;
-        }
+        if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
         var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
