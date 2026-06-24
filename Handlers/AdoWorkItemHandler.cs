@@ -168,6 +168,12 @@ public class AdoWorkItemHandler
         }
 
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
+        if (wi.WorkItemType == "Bug")
+        {
+            var resource2 = payload.GetProperty("resource");
+            if (resource2.TryGetProperty("revision", out var rev2) && rev2.TryGetProperty("fields", out var allF2))
+                _logger.LogInformation("[ADO] Bug fields: {Fields}", string.Join(", ", allF2.EnumerateObject().Select(p => p.Name)));
+        }
 
         // Resolve thread first — this populates workItemMap for previously untracked tickets
         var target = await ResolveThreadAsync(channelId, wi, ct);
