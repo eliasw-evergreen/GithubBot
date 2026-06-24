@@ -69,13 +69,9 @@ public class PreferencesService
         return raw == null ? null : StripRoleFormatting(raw);
     }
 
-    // Strip <@&roleId> or @&roleId down to just the numeric ID
+    // Extract just the numeric snowflake ID from any format: <@&123>, @&123, @123, or 123
     private static string StripRoleFormatting(string value)
-    {
-        var s = value.Trim().TrimStart('<').TrimEnd('>');
-        if (s.StartsWith("@&")) s = s[2..];
-        return s;
-    }
+        => new string(value.Where(char.IsDigit).ToArray());
 
     public string? ResolveReaction(string eventKey, string? envDefault)
     {
