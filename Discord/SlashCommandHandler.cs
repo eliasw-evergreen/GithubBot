@@ -43,9 +43,13 @@ public class SlashCommandHandler
 
     // Bump this whenever the command definitions change.
     private const string CommandsVersion = "v4";
+    private int _registering = 0;
 
     public async Task RegisterAsync()
     {
+        if (Interlocked.CompareExchange(ref _registering, 1, 0) != 0) return;
+        try
+        {
         var guildIdStr = _config["Discord:GuildId"];
         if (!ulong.TryParse(guildIdStr, out var guildId)) return;
 
@@ -160,6 +164,11 @@ public class SlashCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to register slash commands");
+        }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _registering, 0);
         }
     }
 
