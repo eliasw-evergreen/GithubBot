@@ -122,6 +122,7 @@ public class AdoWorkItemHandler
         var workItemId = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() :
                          resource.TryGetProperty("revision", out var revForId) &&
                          revForId.TryGetProperty("id", out var revId) ? revId.GetInt32() : 0;
+        _logger.LogInformation("[ADO] Comment resource keys: {Keys}", string.Join(", ", resource.EnumerateObject().Select(p => $"{p.Name}={p.Value.ValueKind}")));
         var commentText = resource.TryGetProperty("text", out var txt) ? txt.GetString() : null;
 
         string? commenterEmail = null;
