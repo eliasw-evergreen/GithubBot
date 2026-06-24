@@ -188,6 +188,26 @@ public static class ConfigUiHtml
         }
         if (scores.Count == 0)
             sb.Append("<tr><td colspan=\"7\" class=\"no-entries\">No scores recorded yet.</td></tr>");
+
+        // Add user row
+        sb.Append("""
+            <tr style="background:#222238">
+            <form method="post" action="/config/ui/setscore">
+            <td><select name="discord_id" style="width:160px"><option value="">— pick a user —</option>
+            """);
+        foreach (var user in guildUsers.Where(u => !scores.ContainsKey(u.Id)))
+            sb.Append($"<option value=\"{user.Id}\">{Esc(user.Name)}</option>");
+        sb.Append("""
+            </select></td>
+            <td><input type="number" name="pr_opened" value="0" min="0"></td>
+            <td><input type="number" name="pr_merged" value="0" min="0"></td>
+            <td><input type="number" name="review" value="0" min="0"></td>
+            <td><input type="number" name="comments" value="0" min="0"></td>
+            <td></td>
+            <td><button type="submit" class="btn">Add</button></td>
+            </form></tr>
+            """);
+
         sb.Append("</tbody></table>");
 
         // ── JS ──────────────────────────────────────────────────────────────
