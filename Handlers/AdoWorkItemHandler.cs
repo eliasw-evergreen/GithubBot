@@ -177,20 +177,15 @@ public class AdoWorkItemHandler
 
     // ── Thread resolution ────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns the thread channel ID for a work item if tracked; otherwise falls back to the main ticket channel.
-    /// Unlike PR resolution we don't search channel history — ADO items that weren't tracked get posted to the channel.
-    /// </summary>
     private async Task<ulong> ResolveThreadAsync(ulong channelId, WorkItemInfo wi, CancellationToken ct)
     {
         var stored = _workItemMap.Get(wi.Id);
+
         if (stored?.ThreadId is ulong threadId)
         {
-            // Gateway cache first
             var cached = _discord.Client.GetChannel(threadId);
             if (cached != null) return threadId;
 
-            // Try REST (archived threads aren't in cache)
             try
             {
                 var restThread = await _discord.Client.Rest.GetChannelAsync(threadId)
@@ -204,11 +199,11 @@ public class AdoWorkItemHandler
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[ADO] Thread {ThreadId} not accessible, posting to channel", threadId);
+                _logger.LogWarning(ex, "[ADO] Thread {ThreadId} not accessible, falling back to search", threadId);
             }
         }
 
-        // Not tracked or thread gone — post to channel (and if we have a message, create a new thread)
+        // Have a tracked message but no accessible thread — re-create thread from it
         if (stored?.MessageId is ulong msgId && msgId != 0)
         {
             var newThreadId = await _discord.CreateThreadAsync(channelId, msgId,
@@ -219,6 +214,66 @@ public class AdoWorkItemHandler
                 _workItemMap.Set(wi.Id, stored);
                 return newThreadId;
             }
+        }
+
+        // Not tracked at all — search channel history for a message mentioning this work item ID
+        var textChannel = _discord.Client.GetChannel(channelId) as global::Discord.ITextChannel;
+        if (textChannel != null)
+        {
+            global::Discord.IMessage? found = null;
+            ulong lastId = 0;
+            var idPattern = $"#{wi.Id}";
+            for (var page = 0; page < 3 && found == null; page++)
+            {
+                var batch = lastId == 0
+                    ? await textChannel.GetMessagesAsync(100).FlattenAsync()
+                    : await textChannel.GetMessagesAsync(lastId, global::Discord.Direction.Before, 100).FlattenAsync();
+                var messages = batch.ToList();
+                if (messages.Count == 0) break;
+                found = messages.FirstOrDefault(m =>
+                    m.Embeds.Any(e => e.Title != null && e.Title.Contains(idPattern)));
+                lastId = messages[^1].Id;
+            }
+
+            if (found != null)
+            {
+                _logger.LogInformation("[ADO] Found existing message {MsgId} for work item #{Id}", found.Id, wi.Id);
+                var adoptedThreadId = await _discord.CreateThreadAsync(channelId, found.Id,
+                    $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
+                _workItemMap.Set(wi.Id, new WorkItemMapEntry
+                {
+                    MessageId    = found.Id,
+                    ThreadId     = adoptedThreadId != 0 ? adoptedThreadId : null,
+                    Title        = wi.Title,
+                    WorkItemType = wi.WorkItemType,
+                });
+                return adoptedThreadId != 0 ? adoptedThreadId : channelId;
+            }
+        }
+
+        // Nothing found — post a stub and create a thread from it
+        _logger.LogInformation("[ADO] No existing message for work item #{Id}, creating stub", wi.Id);
+        var (color, emoji) = TypeEmoji(wi.WorkItemType);
+        var stubEmbed = new global::Discord.EmbedBuilder()
+            .WithTitle($"{emoji} {wi.WorkItemType ?? "Work Item"} #{wi.Id}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithColor(color)
+            .WithUrl(wi.Url)
+            .WithDescription("Activity was received for this work item before it was tracked.")
+            .Build();
+
+        var stub = await _discord.SendMessageAsync(channelId, null, stubEmbed, ct);
+        if (stub != null)
+        {
+            var stubThreadId = await _discord.CreateThreadAsync(channelId, stub.Id,
+                $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
+            _workItemMap.Set(wi.Id, new WorkItemMapEntry
+            {
+                MessageId    = stub.Id,
+                ThreadId     = stubThreadId != 0 ? stubThreadId : null,
+                Title        = wi.Title,
+                WorkItemType = wi.WorkItemType,
+            });
+            return stubThreadId != 0 ? stubThreadId : channelId;
         }
 
         return channelId;
