@@ -31,8 +31,8 @@ public static class EmbedBuilders
         };
 
         var draftTag = pr.Draft ? " *(Draft)*" : "";
-        var descriptionRaw = StripDevOpsLinks(pr.Body);
-        var description = !string.IsNullOrWhiteSpace(descriptionRaw) ? Truncate(descriptionRaw, 1024) : "*No description provided.*";
+        var cleaned = CleanBody(StripDevOpsLinks(pr.Body));
+        var description = !string.IsNullOrWhiteSpace(cleaned.Text) ? Truncate(cleaned.Text, 1024) : "*No description provided.*";
         var author = Mention(userMap, pr.User.Login);
 
         var embed = new EmbedBuilder()
@@ -54,6 +54,9 @@ public static class EmbedBuilders
         if (ticket != null)
             embed.AddField("Ticket", $"[#{ticket.Id}]({ticket.Url})", inline: true);
 
+        if (cleaned.ImageUrl != null)
+            embed.WithImageUrl(cleaned.ImageUrl);
+
         if (action == "closed_merged" && pr.MergedBy != null)
         {
             var mergedBy = Mention(userMap, pr.MergedBy.Login);
@@ -65,7 +68,8 @@ public static class EmbedBuilders
 
     public static Embed CommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap, string? commentReaction = null)
     {
-        var body = !string.IsNullOrEmpty(comment.Body) ? Truncate(comment.Body, 1024) : "*No content.*";
+        var cleaned = CleanBody(comment.Body);
+        var body = !string.IsNullOrWhiteSpace(cleaned.Text) ? Truncate(cleaned.Text, 1024) : "*No content.*";
         var author = Mention(userMap, comment.User.Login);
         var emoji = ReactionEmoji(commentReaction) ?? "💬";
 
@@ -86,12 +90,16 @@ public static class EmbedBuilders
             embed.AddField("Location", $"`{comment.Path}` line {line?.ToString() ?? "?"}", inline: true);
         }
 
+        if (cleaned.ImageUrl != null)
+            embed.WithImageUrl(cleaned.ImageUrl);
+
         return embed.Build();
     }
 
     public static Embed DeletedCommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap, string? commentReaction = null)
     {
-        var body = !string.IsNullOrEmpty(comment.Body) ? Truncate(comment.Body, 1024) : "*No content.*";
+        var cleaned = CleanBody(comment.Body);
+        var body = !string.IsNullOrWhiteSpace(cleaned.Text) ? Truncate(cleaned.Text, 1024) : "*No content.*";
         var author = Mention(userMap, comment.User.Login);
         var emoji = ReactionEmoji(commentReaction) ?? "💬";
 
@@ -110,6 +118,9 @@ public static class EmbedBuilders
             var line = comment.Line ?? comment.OriginalLine;
             embed.AddField("Location", $"`{comment.Path}` line {line?.ToString() ?? "?"}", inline: true);
         }
+
+        if (cleaned.ImageUrl != null)
+            embed.WithImageUrl(cleaned.ImageUrl);
 
         return embed.Build();
     }
@@ -152,10 +163,12 @@ public static class EmbedBuilders
             "commented"         => Color.Blue,
             _                   => Color.LightGrey,
         };
-        var body = !string.IsNullOrEmpty(review.Body) ? Truncate(review.Body, 1024) : "*No comment.*";
+
+        var cleaned = CleanBody(review.Body);
+        var body = !string.IsNullOrWhiteSpace(cleaned.Text) ? Truncate(cleaned.Text, 1024) : "*No comment.*";
         var reviewer = Mention(userMap, review.User.Login);
 
-        return new EmbedBuilder()
+        var embed = new EmbedBuilder()
             .WithTitle(stateLabel)
             .WithUrl(review.HtmlUrl)
             .WithColor(stateColor)
@@ -164,8 +177,12 @@ public static class EmbedBuilders
             .AddField("Reviewer", reviewer, inline: true)
             .AddField("Review", body)
             .WithFooter(repo.FullName)
-            .WithCurrentTimestamp()
-            .Build();
+            .WithCurrentTimestamp();
+
+        if (cleaned.ImageUrl != null)
+            embed.WithImageUrl(cleaned.ImageUrl);
+
+        return embed.Build();
     }
 
     public static Embed AssignedEmbed(PullRequest pr, Repository repo, GitHubUser assignee, UserMapService userMap, string? assignedReaction = null)
@@ -191,17 +208,51 @@ public static class EmbedBuilders
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
 
-    // Converts a reaction config value to something usable in embed text.
-    // <:name:id> → :name:  |  unicode → as-is  |  null/empty → null
     private static string? ReactionEmoji(string? reaction)
     {
         if (string.IsNullOrEmpty(reaction)) return null;
         return reaction.Trim();
     }
 
+    // ── Image handling ────────────────────────────────────────────────────────
+
+    private record CleanedBody(string Text, string? ImageUrl);
+
+    // Matches <img ... src="url" ... /> and markdown ![alt](url)
+    private static readonly Regex HtmlImagePattern = new(
+        @"<img\b[^>]*\bsrc=""([^""]+)""[^>]*/?>",
+        RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
+
+    private static readonly Regex MarkdownImagePattern = new(
+        @"!\[[^\]]*\]\(([^)]+)\)",
+        RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    private static CleanedBody CleanBody(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return new CleanedBody("", null);
+
+        // Extract first image URL from either syntax
+        string? imageUrl = null;
+        var htmlMatch = HtmlImagePattern.Match(body);
+        var mdMatch   = MarkdownImagePattern.Match(body);
+
+        if (htmlMatch.Success && (!mdMatch.Success || htmlMatch.Index <= mdMatch.Index))
+            imageUrl = htmlMatch.Groups[1].Value;
+        else if (mdMatch.Success)
+            imageUrl = mdMatch.Groups[1].Value;
+
+        // Strip all image tags from text
+        var text = HtmlImagePattern.Replace(body, "");
+        text = MarkdownImagePattern.Replace(text, "");
+        text = text.Trim();
+
+        return new CleanedBody(text, imageUrl);
+    }
+
+    // ── DevOps ticket handling ────────────────────────────────────────────────
+
     private record DevOpsTicket(string Url, string Id);
 
-    // Matches dev.azure.com and visualstudio.com work item URLs
     private static readonly Regex DevOpsPattern = new(
         @"https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/(\d+)/?",
         RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
@@ -214,7 +265,6 @@ public static class EmbedBuilders
         return new DevOpsTicket(m.Value.TrimEnd('/'), m.Groups[1].Value);
     }
 
-    // Strip DevOps URLs and any markdown [text](devops-url) wrappers around them
     private static readonly Regex DevOpsLinkPattern = new(
         @"\[([^\]]*)\]\(https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+/?\)|https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+/?",
         RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
