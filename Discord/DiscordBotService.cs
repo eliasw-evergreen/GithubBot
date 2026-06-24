@@ -84,6 +84,17 @@ public class DiscordBotService : IHostedService
         return Task.FromResult<IMessageChannel?>(thread ?? channel);
     }
 
+    private static bool IsPrEmbed(string? embedUrl, int prNumber, string prHtmlUrl)
+    {
+        if (string.IsNullOrEmpty(embedUrl)) return false;
+        // Exact match first
+        if (string.Equals(embedUrl.TrimEnd('/'), prHtmlUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+            return true;
+        // Fallback: match any github.com URL ending in /pull/{prNumber}
+        return embedUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase)
+            && embedUrl.TrimEnd('/').EndsWith($"/pull/{prNumber}", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Resolves the thread for a PR event. If the PR is tracked, returns its thread.
     /// If not tracked, searches recent channel messages for one whose embed URL matches
@@ -126,7 +137,7 @@ public class DiscordBotService : IHostedService
 
             foreach (var msg in messages)
             {
-                if (msg.Embeds.Any(e => e.Url == prHtmlUrl))
+                if (msg.Embeds.Any(e => IsPrEmbed(e.Url, prNumber, prHtmlUrl)))
                 {
                     found = msg;
                     break;
