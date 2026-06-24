@@ -281,6 +281,7 @@ public class AdoWorkItemHandler
         if (!string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
             _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
 
+        _logger.LogInformation("[ADO] Comment HTML: {Html}", commentText);
         // Ping anyone @mentioned in the comment
         var mentionedPings = ExtractMentionEmails(commentText)
             .Select(e => _userMap.AdoToDiscord(e))
