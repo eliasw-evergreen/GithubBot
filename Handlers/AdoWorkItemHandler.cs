@@ -202,8 +202,7 @@ public class AdoWorkItemHandler
         var workItemType  = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.WorkItemType") : null;
         var commenterEmail = fields.ValueKind == JsonValueKind.Object ? Email(fields, "System.ChangedBy") : null;
 
-        var plain = string.IsNullOrWhiteSpace(commentText)
-            ? null : Regex.Replace(commentText, "<[^>]+>", "").Trim();
+        var plain = string.IsNullOrWhiteSpace(commentText) ? null : StripHtml(commentText);
         if (plain?.Length > 1000) plain = plain[..1000] + "…";
 
         var emoji = TypeEmoji(workItemType).emoji;
@@ -463,7 +462,7 @@ public class AdoWorkItemHandler
         }
         if (showDescription && !string.IsNullOrWhiteSpace(wi.Description))
         {
-            var plain = Regex.Replace(wi.Description, "<[^>]+>", "").Trim();
+            var plain = StripHtml(wi.Description);
             if (plain.Length > 300) plain = plain[..300] + "…";
             if (!string.IsNullOrWhiteSpace(plain))
                 embed.WithDescription(plain);
@@ -541,8 +540,13 @@ public class AdoWorkItemHandler
         _userMap.RegisterAdoDisplayName(match.Groups[1].Value, match.Groups[2].Value);
     }
 
-    private static string StripHtml(string s) =>
-        string.IsNullOrEmpty(s) ? s : Regex.Replace(s, "<[^>]+>", "").Trim();
+    private static string StripHtml(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        s = Regex.Replace(s, "<[^>]+>", "");
+        s = System.Net.WebUtility.HtmlDecode(s);
+        return s.Trim();
+    }
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch
     {
