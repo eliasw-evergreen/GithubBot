@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Discord;
 using GithubBot.Discord;
 using GithubBot.Services;
@@ -9,121 +10,368 @@ public class AdoWorkItemHandler
 {
     private readonly DiscordBotService _discord;
     private readonly UserMapService _userMap;
+    private readonly WorkItemMapService _workItemMap;
     private readonly IConfiguration _config;
     private readonly ILogger<AdoWorkItemHandler> _logger;
 
     public AdoWorkItemHandler(
         DiscordBotService discord,
         UserMapService userMap,
+        WorkItemMapService workItemMap,
         IConfiguration config,
         ILogger<AdoWorkItemHandler> logger)
     {
         _discord = discord;
         _userMap = userMap;
+        _workItemMap = workItemMap;
         _config = config;
         _logger = logger;
     }
 
+    // ── workitem.created ────────────────────────────────────────────────────
+
     public async Task HandleWorkItemCreatedAsync(JsonElement payload, CancellationToken ct = default)
     {
-        var channelIdStr = _config["Discord:TicketChannelId"];
-        if (!ulong.TryParse(channelIdStr, out var channelId) || channelId == 0)
+        if (!TryGetChannel(out var channelId)) return;
+        if (!TryParseWorkItem(payload, out var wi)) return;
+
+        var embed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
+        AddStandardFields(embed, wi, showDescription: true);
+
+        string? ping = wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : null;
+
+        _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
+        var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
+        if (msg != null)
         {
-            _logger.LogWarning("[ADO] No ticket channel configured, skipping work item event");
-            return;
+            var threadId = await _discord.CreateThreadAsync(channelId, msg.Id,
+                $"#{wi.Id} — {wi.Title ?? wi.WorkItemType}", ct);
+            _workItemMap.Set(wi.Id, new WorkItemMapEntry
+            {
+                MessageId = msg.Id,
+                ThreadId  = threadId != 0 ? threadId : null,
+                Title     = wi.Title,
+                WorkItemType = wi.WorkItemType,
+            });
+        }
+    }
+
+    // ── workitem.updated ────────────────────────────────────────────────────
+
+    public async Task HandleWorkItemUpdatedAsync(JsonElement payload, CancellationToken ct = default)
+    {
+        if (!TryGetChannel(out var channelId)) return;
+        if (!TryParseWorkItem(payload, out var wi)) return;
+
+        var resource = payload.GetProperty("resource");
+        var changedFields = resource.TryGetProperty("fields", out var cf) ? cf : default;
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"✏️ {TypeEmoji(wi.WorkItemType).emoji} #{wi.Id} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithColor(new Color(0x5865F2))
+            .WithUrl(wi.Url);
+
+        // Show what changed
+        if (changedFields.ValueKind == JsonValueKind.Object)
+        {
+            var interesting = new[] {
+                ("System.State",                          "State"),
+                ("System.AssignedTo",                     "Assigned To"),
+                ("System.Title",                          "Title"),
+                ("System.AreaPath",                       "Area"),
+                ("Microsoft.VSTS.Common.Priority",        "Priority"),
+                ("System.IterationPath",                  "Iteration"),
+            };
+            foreach (var (field, label) in interesting)
+            {
+                if (!changedFields.TryGetProperty(field, out var change)) continue;
+                var oldVal = change.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
+                var newVal = change.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
+                if (string.IsNullOrEmpty(newVal) || oldVal == newVal) continue;
+                embed.AddField(label, oldVal != null ? $"{oldVal} → **{newVal}**" : $"**{newVal}**", inline: true);
+            }
         }
 
-        // ADO workitem.created payload structure
+        if (!string.IsNullOrWhiteSpace(wi.ChangedByEmail))
+        {
+            var d = _userMap.AdoToDiscord(wi.ChangedByEmail);
+            embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
+        }
+
+        // Only ping if assignment changed
+        string? ping = null;
+        if (changedFields.ValueKind == JsonValueKind.Object &&
+            changedFields.TryGetProperty("System.AssignedTo", out _) &&
+            wi.AssignedToDiscord != null)
+            ping = $"<@{wi.AssignedToDiscord}>";
+
+        _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
+        var target = await ResolveThreadAsync(channelId, wi, ct);
+        await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
+    }
+
+    // ── workitem.commented ──────────────────────────────────────────────────
+
+    public async Task HandleWorkItemCommentedAsync(JsonElement payload, CancellationToken ct = default)
+    {
+        if (!TryGetChannel(out var channelId)) return;
+
         var resource = payload.TryGetProperty("resource", out var r) ? r : default;
         if (resource.ValueKind == JsonValueKind.Undefined) return;
 
-        var fields = resource.TryGetProperty("fields", out var f) ? f : default;
-        if (fields.ValueKind == JsonValueKind.Undefined) return;
+        var workItemId = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() : 0;
+        var commentText = resource.TryGetProperty("text", out var txt) ? txt.GetString() : null;
 
-        var id = resource.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0;
-        var title = fields.TryGetProperty("System.Title", out var titleEl) ? titleEl.GetString() : null;
-        var workItemType = fields.TryGetProperty("System.WorkItemType", out var typeEl) ? typeEl.GetString() : "Work Item";
-        var state = fields.TryGetProperty("System.State", out var stateEl) ? stateEl.GetString() : null;
-        var areaPath = fields.TryGetProperty("System.AreaPath", out var areaEl) ? areaEl.GetString() : null;
-        var description = fields.TryGetProperty("System.Description", out var descEl) ? descEl.GetString() : null;
-        var assignedToEmail = fields.TryGetProperty("System.AssignedTo", out var assignedToEl)
-            ? (assignedToEl.ValueKind == JsonValueKind.Object
-                ? (assignedToEl.TryGetProperty("uniqueName", out var un) ? un.GetString() : null)
-                : assignedToEl.GetString())
-            : null;
-        var createdByEmail = fields.TryGetProperty("System.CreatedBy", out var createdByEl)
-            ? (createdByEl.ValueKind == JsonValueKind.Object
-                ? (createdByEl.TryGetProperty("uniqueName", out var un2) ? un2.GetString() : null)
-                : createdByEl.GetString())
-            : null;
+        string? commenterEmail = null;
+        if (resource.TryGetProperty("revisedBy", out var revisedBy))
+            commenterEmail = revisedBy.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
 
-        // Build the URL — ADO payload has a _links.html.href or we can build from resourceContainers
-        string? workItemUrl = null;
-        if (payload.TryGetProperty("_links", out var links) &&
-            links.TryGetProperty("html", out var htmlLink) &&
-            htmlLink.TryGetProperty("href", out var hrefEl))
-            workItemUrl = hrefEl.GetString();
-
-        if (workItemUrl == null && payload.TryGetProperty("resourceContainers", out var containers) &&
-            containers.TryGetProperty("project", out var project) &&
-            project.TryGetProperty("baseUrl", out var baseUrlEl))
+        string? title = null, workItemType = null;
+        if (resource.TryGetProperty("revision", out var revision) &&
+            revision.TryGetProperty("fields", out var revFields))
         {
-            var baseUrl = baseUrlEl.GetString()?.TrimEnd('/');
-            if (baseUrl != null && id != 0)
-                workItemUrl = $"{baseUrl}/_workitems/edit/{id}";
+            title = Str(revFields, "System.Title");
+            workItemType = Str(revFields, "System.WorkItemType");
         }
 
-        var (color, emoji) = workItemType switch
-        {
-            "Bug"         => (Color.Red,       "🐛"),
-            "Task"        => (Color.Blue,      "✅"),
-            "User Story"  => (Color.Green,     "📖"),
-            "Epic"        => (Color.Purple,    "🏔"),
-            "Feature"     => (Color.Orange,    "⭐"),
-            _             => (Color.LightGrey, "📋"),
-        };
+        var plain = string.IsNullOrWhiteSpace(commentText)
+            ? null : Regex.Replace(commentText, "<[^>]+>", "").Trim();
+        if (plain?.Length > 1000) plain = plain[..1000] + "…";
 
+        var emoji = TypeEmoji(workItemType).emoji;
         var embed = new EmbedBuilder()
-            .WithTitle($"{emoji} {workItemType} #{id}: {title}")
-            .WithColor(color)
-            .WithUrl(workItemUrl);
+            .WithTitle($"💬 Comment on {emoji} #{workItemId}{(title != null ? $": {title}" : "")}")
+            .WithColor(new Color(0x57F287))
+            .WithUrl(BuildWorkItemUrl(payload, workItemId));
 
-        if (!string.IsNullOrWhiteSpace(state))
-            embed.AddField("State", state, inline: true);
+        if (!string.IsNullOrWhiteSpace(plain))
+            embed.WithDescription(plain);
 
-        if (!string.IsNullOrWhiteSpace(areaPath))
-            embed.AddField("Area", areaPath, inline: true);
-
-        if (!string.IsNullOrWhiteSpace(assignedToEmail))
+        if (!string.IsNullOrEmpty(commenterEmail))
         {
-            var discordId = _userMap.AdoToDiscord(assignedToEmail);
-            embed.AddField("Assigned To", discordId != null ? $"<@{discordId}>" : assignedToEmail, inline: true);
+            var d = _userMap.AdoToDiscord(commenterEmail);
+            embed.AddField("By", d != null ? $"<@{d}>" : commenterEmail, inline: true);
         }
 
-        if (!string.IsNullOrWhiteSpace(createdByEmail))
-        {
-            var discordId = _userMap.AdoToDiscord(createdByEmail);
-            embed.AddField("Created By", discordId != null ? $"<@{discordId}>" : createdByEmail, inline: true);
-        }
+        _logger.LogInformation("[ADO] Work item commented #{Id}", workItemId);
 
-        if (!string.IsNullOrWhiteSpace(description))
-        {
-            // Strip HTML tags from description
-            var plainDesc = System.Text.RegularExpressions.Regex.Replace(description, "<[^>]+>", "").Trim();
-            if (plainDesc.Length > 300) plainDesc = plainDesc[..300] + "…";
-            if (!string.IsNullOrWhiteSpace(plainDesc))
-                embed.WithDescription(plainDesc);
-        }
-
-        // Ping assigned user if mapped
-        string? ping = null;
-        if (!string.IsNullOrEmpty(assignedToEmail))
-        {
-            var discordId = _userMap.AdoToDiscord(assignedToEmail);
-            if (discordId != null) ping = $"<@{discordId}>";
-        }
-
-        _logger.LogInformation("[ADO] Work item created #{Id} type={Type} title={Title}", id, workItemType, title);
-        await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
+        // Use a minimal WorkItemInfo for thread resolution
+        var wi = new WorkItemInfo(workItemId, title, workItemType, null, null, null, null, null, null, null,
+            BuildWorkItemUrl(payload, workItemId), Color.Default);
+        var target = await ResolveThreadAsync(channelId, wi, ct);
+        await _discord.SendMessageAsync(target, null, embed.Build(), ct);
     }
+
+    // ── workitem.deleted ────────────────────────────────────────────────────
+
+    public async Task HandleWorkItemDeletedAsync(JsonElement payload, CancellationToken ct = default)
+    {
+        if (!TryGetChannel(out var channelId)) return;
+        if (!TryParseWorkItem(payload, out var wi)) return;
+
+        var embed = BuildBaseEmbed(wi, "🗑️ Work Item Deleted", Color.Red);
+        AddStandardFields(embed, wi, showDescription: false);
+
+        _logger.LogInformation("[ADO] Work item deleted #{Id}", wi.Id);
+        var target = await ResolveThreadAsync(channelId, wi, ct);
+        await _discord.SendMessageAsync(target, null, embed.Build(), ct);
+
+        // Archive the thread if we have one
+        var stored = _workItemMap.Get(wi.Id);
+        if (stored?.ThreadId is ulong threadId)
+            await _discord.ArchiveThreadAsync(threadId, ct);
+    }
+
+    // ── Thread resolution ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the thread channel ID for a work item if tracked; otherwise falls back to the main ticket channel.
+    /// Unlike PR resolution we don't search channel history — ADO items that weren't tracked get posted to the channel.
+    /// </summary>
+    private async Task<ulong> ResolveThreadAsync(ulong channelId, WorkItemInfo wi, CancellationToken ct)
+    {
+        var stored = _workItemMap.Get(wi.Id);
+        if (stored?.ThreadId is ulong threadId)
+        {
+            // Gateway cache first
+            var cached = _discord.Client.GetChannel(threadId);
+            if (cached != null) return threadId;
+
+            // Try REST (archived threads aren't in cache)
+            try
+            {
+                var restThread = await _discord.Client.Rest.GetChannelAsync(threadId)
+                    as global::Discord.Rest.RestThreadChannel;
+                if (restThread != null)
+                {
+                    if (restThread.IsArchived)
+                        await restThread.ModifyAsync(p => p.Archived = false);
+                    return threadId;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[ADO] Thread {ThreadId} not accessible, posting to channel", threadId);
+            }
+        }
+
+        // Not tracked or thread gone — post to channel (and if we have a message, create a new thread)
+        if (stored?.MessageId is ulong msgId && msgId != 0)
+        {
+            var newThreadId = await _discord.CreateThreadAsync(channelId, msgId,
+                $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
+            if (newThreadId != 0)
+            {
+                stored!.ThreadId = newThreadId;
+                _workItemMap.Set(wi.Id, stored);
+                return newThreadId;
+            }
+        }
+
+        return channelId;
+    }
+
+    // ── Shared helpers ───────────────────────────────────────────────────────
+
+    private record WorkItemInfo(
+        int Id,
+        string? Title,
+        string? WorkItemType,
+        string? State,
+        string? AreaPath,
+        string? Description,
+        string? AssignedToEmail,
+        string? AssignedToDiscord,
+        string? CreatedByEmail,
+        string? ChangedByEmail,
+        string? Url,
+        Color Color);
+
+    private bool TryGetChannel(out ulong channelId)
+    {
+        channelId = 0;
+        var raw = _config["Discord:TicketChannelId"];
+        if (!ulong.TryParse(raw, out channelId) || channelId == 0)
+        {
+            _logger.LogWarning("[ADO] No ticket channel configured");
+            return false;
+        }
+        return true;
+    }
+
+    private bool TryParseWorkItem(JsonElement payload, out WorkItemInfo wi)
+    {
+        wi = null!;
+        var resource = payload.TryGetProperty("resource", out var r) ? r : default;
+        if (resource.ValueKind == JsonValueKind.Undefined) return false;
+
+        JsonElement fields = default;
+        if (resource.TryGetProperty("fields", out var f) && f.ValueKind == JsonValueKind.Object)
+            fields = f;
+        else if (resource.TryGetProperty("revision", out var rev) &&
+                 rev.TryGetProperty("fields", out var rf))
+            fields = rf;
+        if (fields.ValueKind == JsonValueKind.Undefined) return false;
+
+        var id = resource.TryGetProperty("id", out var idEl) ? idEl.GetInt32() :
+                 resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() : 0;
+
+        var assignedEmail  = Email(fields, "System.AssignedTo");
+        var (color, _)     = TypeEmoji(Str(fields, "System.WorkItemType"));
+
+        wi = new WorkItemInfo(
+            Id:               id,
+            Title:            Str(fields, "System.Title"),
+            WorkItemType:     Str(fields, "System.WorkItemType") ?? "Work Item",
+            State:            Str(fields, "System.State"),
+            AreaPath:         Str(fields, "System.AreaPath"),
+            Description:      Str(fields, "System.Description"),
+            AssignedToEmail:  assignedEmail,
+            AssignedToDiscord: !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
+            CreatedByEmail:   Email(fields, "System.CreatedBy"),
+            ChangedByEmail:   Email(fields, "System.ChangedBy"),
+            Url:              BuildWorkItemUrl(payload, id),
+            Color:            color);
+        return true;
+    }
+
+    private EmbedBuilder BuildBaseEmbed(WorkItemInfo wi, string eventTitle, Color color)
+    {
+        var emoji = TypeEmoji(wi.WorkItemType).emoji;
+        return new EmbedBuilder()
+            .WithTitle($"{eventTitle} — {emoji} {wi.WorkItemType} #{wi.Id}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithColor(color)
+            .WithUrl(wi.Url);
+    }
+
+    private void AddStandardFields(EmbedBuilder embed, WorkItemInfo wi, bool showDescription)
+    {
+        if (!string.IsNullOrWhiteSpace(wi.State))
+            embed.AddField("State", wi.State, inline: true);
+        if (!string.IsNullOrWhiteSpace(wi.AreaPath))
+            embed.AddField("Area", wi.AreaPath, inline: true);
+        if (!string.IsNullOrWhiteSpace(wi.AssignedToEmail))
+            embed.AddField("Assigned To",
+                wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail, inline: true);
+        if (!string.IsNullOrWhiteSpace(wi.CreatedByEmail))
+        {
+            var d = _userMap.AdoToDiscord(wi.CreatedByEmail);
+            embed.AddField("Created By", d != null ? $"<@{d}>" : wi.CreatedByEmail, inline: true);
+        }
+        if (showDescription && !string.IsNullOrWhiteSpace(wi.Description))
+        {
+            var plain = Regex.Replace(wi.Description, "<[^>]+>", "").Trim();
+            if (plain.Length > 300) plain = plain[..300] + "…";
+            if (!string.IsNullOrWhiteSpace(plain))
+                embed.WithDescription(plain);
+        }
+    }
+
+    private string? BuildWorkItemUrl(JsonElement payload, int id)
+    {
+        if (payload.TryGetProperty("_links", out var links) &&
+            links.TryGetProperty("html", out var html) &&
+            html.TryGetProperty("href", out var href))
+            return href.GetString();
+
+        if (payload.TryGetProperty("resourceContainers", out var containers) &&
+            containers.TryGetProperty("project", out var project) &&
+            project.TryGetProperty("baseUrl", out var baseUrl))
+        {
+            var b = baseUrl.GetString()?.TrimEnd('/');
+            if (b != null && id != 0) return $"{b}/_workitems/edit/{id}";
+        }
+        return null;
+    }
+
+    private static (Color color, string emoji) TypeEmoji(string? type) => type switch
+    {
+        "Bug"        => (Color.Red,       "🐛"),
+        "Task"       => (Color.Blue,      "✅"),
+        "User Story" => (Color.Green,     "📖"),
+        "Epic"       => (Color.Purple,    "🏔"),
+        "Feature"    => (Color.Orange,    "⭐"),
+        _            => (Color.LightGrey, "📋"),
+    };
+
+    private static string? Str(JsonElement fields, string key)
+        => fields.TryGetProperty(key, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString() : null;
+
+    private static string? Email(JsonElement fields, string key)
+    {
+        if (!fields.TryGetProperty(key, out var el)) return null;
+        if (el.ValueKind == JsonValueKind.Object)
+            return el.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
+        return el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+    }
+
+    private static string FormatFieldValue(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Object  => el.TryGetProperty("uniqueName", out var un) ? un.GetString() ?? "" : "",
+        JsonValueKind.String  => el.GetString() ?? "",
+        JsonValueKind.Number  => el.GetRawText(),
+        JsonValueKind.Null    => "—",
+        _                     => el.GetRawText(),
+    };
 }

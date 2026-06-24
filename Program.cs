@@ -78,6 +78,7 @@ builder.Services.AddSingleton(new ReviewMapService(Path.Combine(dataPath, "revie
 builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
 builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
 builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulette.json")));
+builder.Services.AddSingleton(new WorkItemMapService(Path.Combine(dataPath, "workitemmap.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
 builder.Services.AddSingleton<GithubBot.Handlers.AdoWorkItemHandler>();
 builder.Services.AddDistributedMemoryCache();
@@ -230,8 +231,17 @@ app.MapPost("/adowebhook", async (HttpContext context) =>
     try
     {
         var adoHandler = app.Services.GetRequiredService<GithubBot.Handlers.AdoWorkItemHandler>();
-        if (adoEventType == "workitem.created")
-            await adoHandler.HandleWorkItemCreatedAsync(adoPayload);
+        switch (adoEventType)
+        {
+            case "workitem.created":
+                await adoHandler.HandleWorkItemCreatedAsync(adoPayload); break;
+            case "workitem.updated":
+                await adoHandler.HandleWorkItemUpdatedAsync(adoPayload); break;
+            case "workitem.commented":
+                await adoHandler.HandleWorkItemCommentedAsync(adoPayload); break;
+            case "workitem.deleted":
+                await adoHandler.HandleWorkItemDeletedAsync(adoPayload); break;
+        }
     }
     catch (Exception ex)
     {
