@@ -194,40 +194,36 @@ public static class ConfigUiHtml
         {
             var name = guildUsers.FirstOrDefault(u => u.Id == discordId)?.Name ?? discordId;
             sb.Append($"""
-                <tr><td><div class="uname">{Esc(name)}</div><div class="uid">{discordId}</div></td>
-                <form method="post" action="/config/ui/setscore">
-                <input type="hidden" name="discord_id" value="{discordId}">
-                <td><input type="number" name="pr_opened" value="{entry.PrOpened}" min="0"></td>
-                <td><input type="number" name="pr_merged" value="{entry.PrMerged}" min="0"></td>
-                <td><input type="number" name="review" value="{entry.ReviewSubmitted}" min="0"></td>
-                <td><input type="number" name="comments" value="{entry.Comments}" min="0"></td>
-                <td><strong>{entry.Total}</strong></td>
-                <td class="f"><button type="submit" class="btn">Save</button></form>
-                <form method="post" action="/config/ui/resetscore">
-                <input type="hidden" name="discord_id" value="{discordId}">
-                <button type="submit" class="btn-red">Reset</button></form></td></tr>
+                <tr data-score-id="{discordId}">
+                <td><div class="uname">{Esc(name)}</div><div class="uid">{discordId}</div></td>
+                <td><input type="number" data-field="pr_opened" value="{entry.PrOpened}" min="0"></td>
+                <td><input type="number" data-field="pr_merged" value="{entry.PrMerged}" min="0"></td>
+                <td><input type="number" data-field="review" value="{entry.ReviewSubmitted}" min="0"></td>
+                <td><input type="number" data-field="comments" value="{entry.Comments}" min="0"></td>
+                <td class="score-total"><strong>{entry.Total}</strong></td>
+                <td class="f">
+                  <button class="btn" onclick="saveScore(this)">Save</button>
+                  <button class="btn-red" onclick="resetScore(this)">Reset</button>
+                </td></tr>
                 """);
         }
         if (scores.Count == 0)
             sb.Append("<tr><td colspan=\"7\" class=\"no-entries\">No scores recorded yet.</td></tr>");
 
         // Add user row
-        sb.Append("""
-            <tr style="background:#222238">
-            <form method="post" action="/config/ui/setscore">
-            <td><select name="discord_id" style="width:160px"><option value="">— pick a user —</option>
-            """);
+        sb.Append("""<tr style="background:#222238" data-score-id=""><td>""");
+        sb.Append("""<select id="new-score-user" style="width:160px"><option value="">— pick a user —</option>""");
         foreach (var user in guildUsers.Where(u => !scores.ContainsKey(u.Id)))
             sb.Append($"<option value=\"{user.Id}\">{Esc(user.Name)}</option>");
         sb.Append("""
             </select></td>
-            <td><input type="number" name="pr_opened" value="0" min="0"></td>
-            <td><input type="number" name="pr_merged" value="0" min="0"></td>
-            <td><input type="number" name="review" value="0" min="0"></td>
-            <td><input type="number" name="comments" value="0" min="0"></td>
+            <td><input type="number" data-field="pr_opened" value="0" min="0"></td>
+            <td><input type="number" data-field="pr_merged" value="0" min="0"></td>
+            <td><input type="number" data-field="review" value="0" min="0"></td>
+            <td><input type="number" data-field="comments" value="0" min="0"></td>
             <td></td>
-            <td><button type="submit" class="btn">Add</button></td>
-            </form></tr>
+            <td><button class="btn" onclick="addScore(this)">Add</button></td>
+            </tr>
             """);
 
         sb.Append("</tbody></table>");
@@ -259,7 +255,7 @@ public static class ConfigUiHtml
               updateBanner();
             };
 
-            // ── Ajax form interception ──────────────────────────────────────
+            // ── Helpers ─────────────────────────────────────────────────────
             function flash(btn, ok) {
               const orig = btn.textContent, origBg = btn.style.background;
               btn.textContent = ok ? '✓' : '!';
@@ -268,22 +264,106 @@ public static class ConfigUiHtml
               setTimeout(() => { btn.textContent = orig; btn.style.background = origBg; btn.disabled = false; }, 1400);
             }
 
+            async function post(action, fd, btn) {
+              try {
+                const res = await fetch(action, { method: 'POST', body: fd });
+                flash(btn, res.ok);
+                return res.ok;
+              } catch { flash(btn, false); return false; }
+            }
+
+            // ── Score editor (uses data-* attrs to avoid form-in-table HTML) ──
+            async function saveScore(btn) {
+              const row = btn.closest('tr');
+              const discordId = row.dataset.scoreId;
+              if (!discordId) return;
+              const fd = new FormData();
+              fd.set('discord_id', discordId);
+              row.querySelectorAll('[data-field]').forEach(i => fd.set(i.dataset.field, i.value));
+              if (!await post('/config/ui/setscore', fd, btn)) return;
+              const total = [...row.querySelectorAll('[data-field]')]
+                .reduce((s, i) => s + (parseInt(i.value) || 0), 0);
+              row.querySelector('.score-total').innerHTML = `<strong>${total}</strong>`;
+            }
+
+            async function resetScore(btn) {
+              const row = btn.closest('tr');
+              const discordId = row.dataset.scoreId;
+              if (!discordId) return;
+              const fd = new FormData();
+              fd.set('discord_id', discordId);
+              if (!await post('/config/ui/resetscore', fd, btn)) return;
+              row.querySelectorAll('[data-field]').forEach(i => i.value = '0');
+              row.querySelector('.score-total').innerHTML = '<strong>0</strong>';
+            }
+
+            async function addScore(btn) {
+              const row = btn.closest('tr');
+              const sel = document.getElementById('new-score-user');
+              const discordId = sel.value;
+              if (!discordId) return;
+              const fd = new FormData();
+              fd.set('discord_id', discordId);
+              row.querySelectorAll('[data-field]').forEach(i => fd.set(i.dataset.field, i.value));
+              if (!await post('/config/ui/setscore', fd, btn)) return;
+              const total = [...row.querySelectorAll('[data-field]')]
+                .reduce((s, i) => s + (parseInt(i.value) || 0), 0);
+              const userName = sel.options[sel.selectedIndex].text;
+              // Insert new row before the add row
+              const tbody = row.closest('tbody');
+              const newRow = document.createElement('tr');
+              newRow.dataset.scoreId = discordId;
+              newRow.innerHTML = `
+                <td><div class="uname">${userName}</div><div class="uid">${discordId}</div></td>
+                <td><input type="number" data-field="pr_opened" value="${fd.get('pr_opened')||0}" min="0"></td>
+                <td><input type="number" data-field="pr_merged" value="${fd.get('pr_merged')||0}" min="0"></td>
+                <td><input type="number" data-field="review" value="${fd.get('review')||0}" min="0"></td>
+                <td><input type="number" data-field="comments" value="${fd.get('comments')||0}" min="0"></td>
+                <td class="score-total"><strong>${total}</strong></td>
+                <td class="f">
+                  <button class="btn" onclick="saveScore(this)">Save</button>
+                  <button class="btn-red" onclick="resetScore(this)">Reset</button>
+                </td>`;
+              tbody.insertBefore(newRow, row);
+              // Remove from picker
+              sel.remove(sel.selectedIndex);
+              // Reset add-row inputs
+              row.querySelectorAll('[data-field]').forEach(i => i.value = '0');
+            }
+
+            // ── Ajax form interception ───────────────────────────────────────
             document.addEventListener('submit', async e => {
               const form = e.target.closest('form');
               if (!form || form.method.toLowerCase() !== 'post') return;
               e.preventDefault();
               const btn = form.querySelector('button[type="submit"]') ?? form.querySelector('button');
               const fd = new FormData(form);
-              try {
-                const res = await fetch(form.action, { method: 'POST', body: fd });
-                if (!res.ok) { flash(btn, false); return; }
-                flash(btn, true);
-                afterSubmit(form, fd);
-              } catch { flash(btn, false); }
+              if (!await post(form.action, fd, btn)) return;
+              afterSubmit(form, fd);
             });
 
             function afterSubmit(form, fd) {
               const action = form.action.replace(location.origin, '');
+
+              // Add a user mapping tag
+              if (action === '/config/ui/add') {
+                const username = fd.get('username')?.trim();
+                const type = fd.get('type') ?? 'github';
+                const isAdo = type === 'devops';
+                if (!username) return;
+                const mappingsCell = form.closest('tr')?.querySelector('td:nth-child(2)');
+                if (!mappingsCell) return;
+                // Remove the "—" placeholder if present
+                mappingsCell.querySelector('.no-entries')?.remove();
+                const cls = isAdo ? 'tag-ado' : 'tag-gh';
+                const title = isAdo ? 'DevOps' : 'GitHub';
+                const storedKey = isAdo ? username : username;
+                const tagHtml = `<span class="tag ${cls}" title="${title}">${username}</span>`;
+                const removeHtml = `<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="${fd.get('discord_id')}"><input type="hidden" name="stored_key" value="${isAdo ? 'ado:' + username : username}"><button type="submit" class="remove" title="Remove">✕</button></form>`;
+                mappingsCell.insertAdjacentHTML('beforeend', tagHtml + removeHtml);
+                form.querySelector('input[name="username"]').value = '';
+                return;
+              }
 
               // Remove a user mapping tag
               if (action === '/config/ui/remove') {
@@ -303,17 +383,17 @@ public static class ConfigUiHtml
                 return;
               }
 
-              // Set reaction — update the display cell in the same row
+              // Set reaction
               if (action === '/config/ui/setreaction') {
                 const emoji = fd.get('emoji')?.trim();
                 if (!emoji) return;
                 const row = form.closest('tr');
                 const cell = row?.querySelector('td:nth-child(2)');
                 if (cell) cell.innerHTML = `<span class="reaction-val">${emoji}</span><span class="src">[prefs]</span>`;
-                // Show the clear button if hidden
                 const clearCell = row?.querySelector('td:last-child');
                 if (clearCell && !clearCell.querySelector('button'))
                   clearCell.innerHTML = `<form method="post" action="/config/ui/clearreaction"><input type="hidden" name="event" value="${fd.get('event')}"><button type="submit" class="btn-sm">Clear</button></form>`;
+                form.querySelector('input[name="emoji"]').value = '';
                 return;
               }
 
@@ -326,7 +406,7 @@ public static class ConfigUiHtml
                 return;
               }
 
-              // Set a role row (pingrole / configrole / commandrole)
+              // Set a role row
               if (['/config/ui/setpingrole','/config/ui/setconfigrole','/config/ui/setcommandrole'].includes(action)) {
                 const sel = form.querySelector('select[name="role_id"]');
                 const roleId = sel?.value;
@@ -335,8 +415,8 @@ public static class ConfigUiHtml
                 const row = form.closest('tr');
                 const cell = row?.querySelector('td:nth-child(2)');
                 if (cell) cell.innerHTML = `${roleName}<span class="src">[prefs]</span>`;
-                const clearCell = row?.querySelector('td:last-child');
                 const clearActions = { '/config/ui/setpingrole': '/config/ui/clearpingrole', '/config/ui/setconfigrole': '/config/ui/clearconfigrole', '/config/ui/setcommandrole': '/config/ui/clearcommandrole' };
+                const clearCell = row?.querySelector('td:last-child');
                 if (clearCell && !clearCell.querySelector('button'))
                   clearCell.innerHTML = `<form method="post" action="${clearActions[action]}"><button type="submit" class="btn-sm">Clear override</button></form>`;
                 return;
@@ -371,27 +451,6 @@ public static class ConfigUiHtml
                 const cell = row?.querySelector('td:nth-child(2)');
                 if (cell) cell.innerHTML = `<span class="no-entries">unset</span>`;
                 form.closest('td').innerHTML = '';
-                return;
-              }
-
-              // Save score — update total cell
-              if (action === '/config/ui/setscore') {
-                const row = form.closest('tr') ?? form.closest('tr');
-                // sum the inputs
-                const vals = ['pr_opened','pr_merged','review','comments','bonus']
-                  .map(n => parseInt(form.querySelector(`input[name="${n}"]`)?.value ?? '0') || 0);
-                const total = vals.reduce((a,b) => a+b, 0);
-                const totalCell = row?.querySelector('td:nth-child(6)');
-                if (totalCell) totalCell.innerHTML = `<strong>${total}</strong>`;
-                return;
-              }
-
-              // Reset score — zero out all inputs and total
-              if (action === '/config/ui/resetscore') {
-                const row = form.closest('tr');
-                row?.querySelectorAll('input[type="number"]').forEach(i => i.value = '0');
-                const totalCell = row?.querySelector('td:nth-child(6)');
-                if (totalCell) totalCell.innerHTML = '<strong>0</strong>';
                 return;
               }
             }
