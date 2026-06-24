@@ -126,6 +126,21 @@ public class SlashCommandHandler
                     .Build(),
                 guildId);
 
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("setpingrole")
+                    .WithDescription("Set the role to ping when a PR is opened or merged")
+                    .AddOption("role", ApplicationCommandOptionType.Role, "The role to ping", isRequired: true)
+                    .Build(),
+                guildId);
+
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("clearpingrole")
+                    .WithDescription("Clear the ping role override and fall back to .env")
+                    .Build(),
+                guildId);
+
             _logger.LogInformation("Slash commands registered");
         }
         catch (Exception ex)
@@ -170,6 +185,12 @@ public class SlashCommandHandler
                 break;
             case "listreactions":
                 await HandleListReactions(command);
+                break;
+            case "setpingrole":
+                await HandleSetPingRole(command);
+                break;
+            case "clearpingrole":
+                await HandleClearPingRole(command);
                 break;
         }
     }
@@ -328,6 +349,27 @@ public class SlashCommandHandler
             .WithTitle("Active Reactions")
             .WithColor(new Color(0x5865F2))
             .WithDescription(string.Join('\n', lines))
+            .WithCurrentTimestamp()
+            .Build()]);
+    }
+
+    private async Task HandleSetPingRole(SocketSlashCommand command)
+    {
+        var role = (SocketRole)command.Data.Options.First(o => o.Name == "role").Value;
+        _prefs.SetPingRole(role.Id.ToString());
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithColor(Color.Green)
+            .WithDescription($"PR ping role set to {role.Mention}")
+            .WithCurrentTimestamp()
+            .Build()]);
+    }
+
+    private async Task HandleClearPingRole(SocketSlashCommand command)
+    {
+        _prefs.ClearPingRole();
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithColor(Color.Orange)
+            .WithDescription("PR ping role override cleared — .env value will be used.")
             .WithCurrentTimestamp()
             .Build()]);
     }

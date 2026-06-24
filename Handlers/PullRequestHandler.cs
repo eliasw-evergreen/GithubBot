@@ -77,7 +77,7 @@ public class PullRequestHandler : IGitHubEventHandler
     {
         var embed = BuildPrEmbed(pr, repo, action);
         var mention = _userMap.GitHubToDiscord(pr.User.Login) is string did ? $"<@{did}>" : $"**{pr.User.Login}**";
-        var rolePing = _config["Roles:PrPing"];
+        var rolePing = _prefs.ResolvePingRole(_config["Roles:PrPing"]);
         var rolePrefix = !string.IsNullOrEmpty(rolePing) ? $"<@&{rolePing}> " : "";
 
         var channel = await _discord.GetChannelAsync(ct);
@@ -180,7 +180,7 @@ public class PullRequestHandler : IGitHubEventHandler
                 var thread = await _discord.GetThreadAsync(channel.Id, stored.ThreadId.Value, ct);
                 if (thread != null)
                 {
-                    var rolePing = _config["Roles:PrPing"];
+                    var rolePing = _prefs.ResolvePingRole(_config["Roles:PrPing"]);
                     var pingContent = merged && !string.IsNullOrEmpty(rolePing) ? $"<@&{rolePing}>" : null;
                     await _discord.SendMessageAsync(thread.Id, pingContent, embed, ct);
                     await _discord.ArchiveThreadAsync(thread.Id, ct);

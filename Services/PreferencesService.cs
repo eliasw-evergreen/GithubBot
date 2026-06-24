@@ -13,6 +13,8 @@ public class PreferencesService
         Load();
     }
 
+    private string? _pingRole;
+
     private void Load()
     {
         try
@@ -20,6 +22,7 @@ public class PreferencesService
             var json = File.ReadAllText(_filePath);
             var data = JsonSerializer.Deserialize<PreferencesData>(json);
             _reactions = data?.Reactions ?? [];
+            _pingRole = data?.PingRole;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -34,7 +37,7 @@ public class PreferencesService
 
     private void Save()
     {
-        var json = JsonSerializer.Serialize(new PreferencesData { Reactions = _reactions },
+        var json = JsonSerializer.Serialize(new PreferencesData { Reactions = _reactions, PingRole = _pingRole },
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
@@ -57,6 +60,11 @@ public class PreferencesService
         Save();
     }
 
+    public string? GetPingRole() => _pingRole;
+    public void SetPingRole(string roleId) { _pingRole = roleId; Save(); }
+    public void ClearPingRole() { _pingRole = null; Save(); }
+    public string? ResolvePingRole(string? envDefault) => _pingRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+
     public string? ResolveReaction(string eventKey, string? envDefault)
     {
         var pref = GetReaction(eventKey);
@@ -67,5 +75,6 @@ public class PreferencesService
     private class PreferencesData
     {
         public Dictionary<string, string> Reactions { get; set; } = [];
+        public string? PingRole { get; set; }
     }
 }
