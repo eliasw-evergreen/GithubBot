@@ -53,6 +53,8 @@ var envMap = new Dictionary<string, string?>
     ["Roles:Config"] = Env.GetString("CONFIG_ROLE"),
     ["PruneDays"] = Env.GetString("PRUNE_DAYS"),
     ["Port"] = Env.GetString("PORT"),
+    ["Discord:TicketChannelId"] = Env.GetString("DISCORD_TICKET_CHANNEL_ID"),
+    ["AzureDevOps:WebhookSecret"] = Env.GetString("ADO_WEBHOOK_SECRET"),
 };
 
 builder.Configuration
@@ -156,6 +158,15 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
         appLogger.LogError(ex, "Webhook error event={EventType} action={Action}", eventType, action);
     }
 
+    return Results.Ok("ok");
+});
+
+app.MapPost("/adowebhook", async (HttpContext context) =>
+{
+    // TODO: verify ADO_WEBHOOK_SECRET (basic auth or shared secret header)
+    // TODO: parse eventType from payload ("resource.fields.System.State", etc.)
+    // TODO: dispatch to ADO event handlers
+    appLogger.LogInformation("ADO webhook received (stub)");
     return Results.Ok("ok");
 });
 
