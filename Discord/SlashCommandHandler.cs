@@ -73,81 +73,8 @@ public class SlashCommandHandler
 
         try
         {
-            var eventChoices = new SlashCommandOptionBuilder()
-                .WithName("event")
-                .WithRequired(true)
-                .WithType(ApplicationCommandOptionType.String)
-                .AddChoice("Opened",             "opened")
-                .AddChoice("Reopened",           "reopened")
-                .AddChoice("Ready for Review",   "ready_for_review")
-                .AddChoice("Converted to Draft", "converted_to_draft")
-                .AddChoice("Merged",             "merged")
-                .AddChoice("Closed",             "closed")
-                .AddChoice("Approved",           "approved")
-                .AddChoice("Changes Requested",  "changes_requested")
-                .AddChoice("Review Requested",   "review_requested")
-                .AddChoice("Assigned",           "assigned")
-                .AddChoice("Comment",            "comment");
-
-            var typeChoice = new SlashCommandOptionBuilder()
-                .WithName("type")
-                .WithRequired(false)
-                .WithType(ApplicationCommandOptionType.String)
-                .AddChoice("GitHub", "github")
-                .AddChoice("DevOps", "devops");
-
             var commands = new ApplicationCommandProperties[]
             {
-                new SlashCommandBuilder()
-                    .WithName("mapuser")
-                    .WithDescription("Map a GitHub username or DevOps email to a Discord user")
-                    .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
-                    .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email", isRequired: true)
-                    .AddOption(typeChoice.WithDescription("Account type to map"))
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("unmapuser")
-                    .WithDescription("Remove a username mapping from a Discord user")
-                    .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
-                    .AddOption("username", ApplicationCommandOptionType.String, "Specific username/email to remove (leave blank to remove all)", isRequired: false)
-                    .AddOption(typeChoice.WithDescription("Account type to remove"))
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("listmappings")
-                    .WithDescription("Show all Discord <-> GitHub/DevOps user mappings")
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("setreaction")
-                    .WithDescription("Override a reaction emoji for an event")
-                    .AddOption(eventChoices.WithDescription("The event to set a reaction for"))
-                    .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("clearreaction")
-                    .WithDescription("Remove a reaction override and use the server default")
-                    .AddOption(eventChoices.WithDescription("The event to clear"))
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("listreactions")
-                    .WithDescription("Show all active reactions (preferences override .env)")
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("setpingrole")
-                    .WithDescription("Set the role to ping when a PR is opened or merged")
-                    .AddOption("role", ApplicationCommandOptionType.Role, "The role to ping", isRequired: true)
-                    .Build(),
-
-                new SlashCommandBuilder()
-                    .WithName("clearpingrole")
-                    .WithDescription("Clear the ping role override and fall back to .env")
-                    .Build(),
-
                 new SlashCommandBuilder()
                     .WithName("score")
                     .WithDescription("Show your score and stats, or view another user's score")
@@ -213,30 +140,6 @@ public class SlashCommandHandler
 
         switch (command.Data.Name)
         {
-            case "mapuser":
-                await HandleMapUser(command);
-                break;
-            case "unmapuser":
-                await HandleUnmapUser(command);
-                break;
-            case "listmappings":
-                await HandleListMappings(command);
-                break;
-            case "setreaction":
-                await HandleSetReaction(command);
-                break;
-            case "clearreaction":
-                await HandleClearReaction(command);
-                break;
-            case "listreactions":
-                await HandleListReactions(command);
-                break;
-            case "setpingrole":
-                await HandleSetPingRole(command);
-                break;
-            case "clearpingrole":
-                await HandleClearPingRole(command);
-                break;
             case "score":
                 await HandleScore(command);
                 break;
@@ -277,107 +180,6 @@ public class SlashCommandHandler
         await interaction.RespondAsync(choices);
     }
 
-    private async Task HandleMapUser(SocketSlashCommand command)
-    {
-        var discordUser = (SocketUser)command.Data.Options.First(o => o.Name == "discord_user").Value;
-        var username = ((string)command.Data.Options.First(o => o.Name == "username").Value).Trim();
-        var type = command.Data.Options.FirstOrDefault(o => o.Name == "type")?.Value as string ?? "github";
-        var isAdo = type == "devops";
-        var storedKey = isAdo ? UserMapService.Encode(username) : username;
-
-        var map = _userMap.GetAll();
-        if (!map.TryGetValue(discordUser.Id.ToString(), out var existing))
-            existing = [];
-
-        if (existing.Any(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)))
-        {
-            await command.RespondAsync($"**{username}** is already mapped to <@{discordUser.Id}>.", ephemeral: true);
-            return;
-        }
-
-        existing.Add(storedKey);
-        map[discordUser.Id.ToString()] = existing;
-        _userMap.Save(map);
-
-        var all = string.Join(", ", existing.Select(FormatMappingEntry));
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithColor(Color.Green)
-            .WithDescription($"<@{discordUser.Id}> is now mapped to: {all}")
-            .WithCurrentTimestamp()
-            .Build()]);
-
-        if (!isAdo)
-            _ = Task.Run(() => BackfillMappingAsync(username, discordUser.Id.ToString()));
-    }
-
-    private async Task HandleUnmapUser(SocketSlashCommand command)
-    {
-        var discordUser = (SocketUser)command.Data.Options.First(o => o.Name == "discord_user").Value;
-        var username = command.Data.Options.FirstOrDefault(o => o.Name == "username")?.Value as string;
-        var type = command.Data.Options.FirstOrDefault(o => o.Name == "type")?.Value as string ?? "github";
-        var map = _userMap.GetAll();
-
-        if (!map.TryGetValue(discordUser.Id.ToString(), out var existing) || existing.Count == 0)
-        {
-            await command.RespondAsync("No mapping found for that user.", ephemeral: true);
-            return;
-        }
-
-        if (!string.IsNullOrEmpty(username))
-        {
-            var storedKey = type == "devops" ? UserMapService.Encode(username) : username;
-            var updated = existing.Where(n => !n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (updated.Count == existing.Count)
-            {
-                await command.RespondAsync($"**{username}** was not mapped to <@{discordUser.Id}>.", ephemeral: true);
-                return;
-            }
-            if (updated.Count == 0)
-                map.Remove(discordUser.Id.ToString());
-            else
-                map[discordUser.Id.ToString()] = updated;
-            _userMap.Save(map);
-            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-                .WithColor(Color.Orange)
-                .WithDescription($"Removed **{username}** from <@{discordUser.Id}>'s mappings")
-                .WithCurrentTimestamp()
-                .Build()]);
-        }
-        else
-        {
-            map.Remove(discordUser.Id.ToString());
-            _userMap.Save(map);
-            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-                .WithColor(Color.Orange)
-                .WithDescription($"Removed all mappings for <@{discordUser.Id}>")
-                .WithCurrentTimestamp()
-                .Build()]);
-        }
-    }
-
-    private async Task HandleListMappings(SocketSlashCommand command)
-    {
-        var entries = _userMap.GetAll();
-        if (entries.Count == 0)
-        {
-            await command.RespondAsync("No mappings configured yet.", ephemeral: true);
-            return;
-        }
-
-        var lines = entries.Select(kvp =>
-        {
-            var links = string.Join(", ", kvp.Value.Select(FormatMappingEntry));
-            return $"<@{kvp.Key}> → {links}";
-        });
-
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithTitle("Discord ↔ GitHub / DevOps Mappings")
-            .WithColor(new Color(0x5865F2))
-            .WithDescription(string.Join('\n', lines))
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
     private async Task HandleConfigUi(SocketSlashCommand command)
     {
         var displayName = (command.User as SocketGuildUser)?.DisplayName ?? command.User.GlobalName ?? command.User.Username;
@@ -390,82 +192,6 @@ public class SlashCommandHandler
             .WithColor(new Color(0x7c3aed))
             .WithTitle("Config UI")
             .WithDescription($"[Open user mapping editor]({url})\n\nThis link is **one-time use** and valid for the duration of your browser session.")
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
-    private static string FormatMappingEntry(string storedKey) => UserMapService.Label(storedKey);
-
-    private async Task HandleSetReaction(SocketSlashCommand command)
-    {
-        var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
-        var emoji = ((string)command.Data.Options.First(o => o.Name == "emoji").Value).Trim();
-
-        _prefs.SetReaction(eventKey, emoji);
-
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithColor(Color.Green)
-            .WithDescription($"Reaction for **{EventLabel(eventKey)}** is now set to {emoji}")
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
-    private async Task HandleClearReaction(SocketSlashCommand command)
-    {
-        var eventKey = (string)command.Data.Options.First(o => o.Name == "event").Value;
-
-        _prefs.ClearReaction(eventKey);
-
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithColor(Color.Orange)
-            .WithDescription($"Reaction override for **{EventLabel(eventKey)}** cleared — .env value will be used.")
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
-    private async Task HandleListReactions(SocketSlashCommand command)
-    {
-        var keys = new[] { "opened", "reopened", "ready_for_review", "converted_to_draft", "merged", "closed", "approved", "changes_requested", "review_requested", "assigned", "comment" };
-        var envKeys = new Dictionary<string, string>
-        {
-            ["opened"]             = "Reactions:Opened",
-            ["reopened"]           = "Reactions:Reopened",
-            ["ready_for_review"]   = "Reactions:ReadyForReview",
-            ["converted_to_draft"] = "Reactions:ConvertedToDraft",
-            ["merged"]             = "Reactions:Merged",
-            ["closed"]             = "Reactions:Closed",
-            ["approved"]           = "Reactions:Approved",
-            ["changes_requested"]  = "Reactions:ChangesRequested",
-            ["review_requested"]   = "Reactions:ReviewRequested",
-            ["assigned"]           = "Reactions:Assigned",
-            ["comment"]            = "Reactions:Comment",
-        };
-
-        var lines = keys.Select(key =>
-        {
-            var pref = _prefs.GetReaction(key);
-            var env  = _config[envKeys[key]];
-            var active = pref ?? env;
-            var source = pref != null ? "prefs" : (!string.IsNullOrEmpty(env) ? ".env" : "unset");
-            var display = string.IsNullOrEmpty(active) ? "*unset*" : active;
-            return $"**{EventLabel(key)}** — {display} `[{source}]`";
-        });
-
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithTitle("Active Reactions")
-            .WithColor(new Color(0x5865F2))
-            .WithDescription(string.Join('\n', lines))
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
-    private async Task HandleSetPingRole(SocketSlashCommand command)
-    {
-        var role = (SocketRole)command.Data.Options.First(o => o.Name == "role").Value;
-        _prefs.SetPingRole(role.Id.ToString());
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithColor(Color.Green)
-            .WithDescription($"PR ping role set to {role.Mention}")
             .WithCurrentTimestamp()
             .Build()]);
     }
@@ -621,32 +347,6 @@ public class SlashCommandHandler
             await command.RespondAsync(ephemeral: true, embeds: [embed.Build()]);
         }
     }
-
-    private async Task HandleClearPingRole(SocketSlashCommand command)
-    {
-        _prefs.ClearPingRole();
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithColor(Color.Orange)
-            .WithDescription("PR ping role override cleared — .env value will be used.")
-            .WithCurrentTimestamp()
-            .Build()]);
-    }
-
-    private static string EventLabel(string eventKey) => eventKey switch
-    {
-        "opened"             => "Opened",
-        "reopened"           => "Reopened",
-        "ready_for_review"   => "Ready for Review",
-        "converted_to_draft" => "Converted to Draft",
-        "merged"             => "Merged",
-        "closed"             => "Closed",
-        "approved"           => "Approved",
-        "changes_requested"  => "Changes Requested",
-        "review_requested"   => "Review Requested",
-        "assigned"           => "Assigned",
-        "comment"            => "Comment",
-        _                    => eventKey,
-    };
 
     private async Task BackfillMappingAsync(string githubLogin, string discordId)
     {

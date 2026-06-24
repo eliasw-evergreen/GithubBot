@@ -193,19 +193,12 @@ Slash commands are registered automatically on first start. All responses are ep
 
 | Command | Description |
 |---|---|
-| `/mapuser` | Map a Discord user to a GitHub username or DevOps email |
-| `/unmapuser` | Remove a mapping for a Discord user |
-| `/listmappings` | Show all Discord ↔ GitHub/DevOps mappings |
-| `/setreaction` | Override the emoji for an event type |
-| `/clearreaction` | Clear a reaction override and fall back to `.env` |
-| `/listreactions` | Show all active reactions and their source |
-| `/setpingrole` | Set the role to ping on PR open/merge |
-| `/clearpingrole` | Clear the ping role override |
 | `/score` | Show your score breakdown (or another user's) |
 | `/leaderboard` | Show the top scorers; pass `verbose:True` for per-category breakdown |
+| `/prroulette` | Assign random mapped users to review a PR; bonus points if they comment or review |
 | `/configui` | Generate a one-time link to the web config UI |
 
-When a new GitHub user mapping is added, the bot automatically backfills old PR messages in the channel, replacing plain GitHub usernames with Discord mentions.
+Configuration (user mappings, reactions, channels, ping role) is managed through the web config UI.
 
 ---
 
