@@ -1,9 +1,11 @@
 .env
-usermap.json
-prmap.json
-node_modules/
 
 # C# build artifacts
 bin/
 obj/
+
+# Miscellanious
 logs/
+usermap.json
+prmap.json
+preferences.json
