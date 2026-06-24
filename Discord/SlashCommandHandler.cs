@@ -2,6 +2,7 @@ using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
 using GithubBot.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GithubBot.Discord;
 
@@ -12,6 +13,7 @@ public class SlashCommandHandler
     private readonly PrMapService _prMap;
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
+    private readonly ConfigUiTokenService _configTokens;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -23,6 +25,7 @@ public class SlashCommandHandler
         PrMapService prMap,
         PreferencesService prefs,
         ScoreService scores,
+        ConfigUiTokenService configTokens,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
@@ -31,6 +34,7 @@ public class SlashCommandHandler
         _prMap = prMap;
         _prefs = prefs;
         _scores = scores;
+        _configTokens = configTokens;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -174,6 +178,13 @@ public class SlashCommandHandler
                     .Build(),
                 guildId);
 
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("configui")
+                    .WithDescription("Generate a one-time link to the user mapping web UI")
+                    .Build(),
+                guildId);
+
             _logger.LogInformation("Slash commands registered");
         }
         catch (Exception ex)
@@ -230,6 +241,9 @@ public class SlashCommandHandler
                 break;
             case "leaderboard":
                 await HandleLeaderboard(command);
+                break;
+            case "configui":
+                await HandleConfigUi(command);
                 break;
         }
     }
@@ -331,6 +345,21 @@ public class SlashCommandHandler
             .WithTitle("Discord ↔ GitHub / DevOps Mappings")
             .WithColor(new Color(0x5865F2))
             .WithDescription(string.Join('\n', lines))
+            .WithCurrentTimestamp()
+            .Build()]);
+    }
+
+    private async Task HandleConfigUi(SocketSlashCommand command)
+    {
+        var token = _configTokens.GenerateToken();
+        var port = _config.GetValue<int?>("Port") ?? 3000;
+        var host = _config["PublicHost"] ?? $"http://localhost:{port}";
+        var url = $"{host.TrimEnd('/')}/config?token={token}";
+
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithColor(new Color(0x7c3aed))
+            .WithTitle("Config UI")
+            .WithDescription($"[Open user mapping editor]({url})\n\nThis link is **one-time use** and valid for the duration of your browser session.")
             .WithCurrentTimestamp()
             .Build()]);
     }

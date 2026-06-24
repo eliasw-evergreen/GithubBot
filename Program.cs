@@ -5,6 +5,7 @@ using DotNetEnv;
 using GithubBot.Discord;
 using GithubBot.Handlers;
 using GithubBot.Services;
+using GithubBot.Web;
 using Serilog;
 using Serilog.Events;
 
@@ -73,6 +74,15 @@ builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.jso
 builder.Services.AddSingleton(new CommentMapService(Path.Combine(dataPath, "commentmap.json")));
 builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
 builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
+builder.Services.AddSingleton<ConfigUiTokenService>();
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(o =>
+{
+    o.Cookie.HttpOnly = true;
+    o.Cookie.SameSite = SameSiteMode.Strict;
+    o.Cookie.IsEssential = true;
+    // No MaxAge = true browser-session cookie (dies when browser closes)
+});
 builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
 {
     GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,
@@ -106,6 +116,7 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}"));
 
 var app = builder.Build();
+app.UseSession();
 var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
 // ── Webhook endpoint ─────────────────────────────────────────────────────
@@ -186,6 +197,83 @@ app.MapPost("/adowebhook", async (HttpContext context) =>
     // TODO: dispatch to ADO event handlers
     appLogger.LogInformation("ADO webhook received (stub)");
     return Results.Ok("ok");
+});
+
+// ── Config UI ─────────────────────────────────────────────────────────────
+
+app.MapGet("/config", (HttpContext context, ConfigUiTokenService tokens) =>
+{
+    var token = context.Request.Query["token"].FirstOrDefault();
+    if (string.IsNullOrEmpty(token) || !tokens.ConsumeToken(token))
+        return Results.Text("Invalid or expired link.", statusCode: 403);
+
+    context.Session.SetString("auth", "1");
+    return Results.Redirect("/config/ui");
+});
+
+app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Discord.WebSocket.DiscordSocketClient discordClient, IConfiguration config) =>
+{
+    if (context.Session.GetString("auth") != "1")
+        return Results.Text("Unauthorized.", statusCode: 401);
+
+    var guildId = ulong.TryParse(config["Discord:GuildId"], out var gid) ? gid : 0UL;
+    var guild = discordClient.GetGuild(guildId);
+    var guildUsers = guild?.Users
+        .OrderBy(u => u.DisplayName)
+        .Select(u => (Id: u.Id.ToString(), Name: u.DisplayName))
+        .ToList() ?? [];
+
+    var map = userMap.GetAll();
+    var html = ConfigUiHtml.Render(guildUsers, map);
+    return Results.Content(html, "text/html");
+});
+
+app.MapPost("/config/ui/add", async (HttpContext context, UserMapService userMap) =>
+{
+    if (context.Session.GetString("auth") != "1")
+        return Results.Text("Unauthorized.", statusCode: 401);
+
+    var form = await context.Request.ReadFormAsync();
+    var discordId = form["discord_id"].FirstOrDefault()?.Trim();
+    var username = form["username"].FirstOrDefault()?.Trim();
+    var type = form["type"].FirstOrDefault() ?? "github";
+
+    if (string.IsNullOrEmpty(discordId) || string.IsNullOrEmpty(username))
+        return Results.Redirect("/config/ui");
+
+    var storedKey = type == "devops" ? UserMapService.Encode(username) : username;
+    var map = userMap.GetAll();
+    if (!map.TryGetValue(discordId, out var existing)) existing = [];
+    if (!existing.Any(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)))
+    {
+        existing.Add(storedKey);
+        map[discordId] = existing;
+        userMap.Save(map);
+    }
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/remove", async (HttpContext context, UserMapService userMap) =>
+{
+    if (context.Session.GetString("auth") != "1")
+        return Results.Text("Unauthorized.", statusCode: 401);
+
+    var form = await context.Request.ReadFormAsync();
+    var discordId = form["discord_id"].FirstOrDefault()?.Trim();
+    var storedKey = form["stored_key"].FirstOrDefault()?.Trim();
+
+    if (string.IsNullOrEmpty(discordId) || string.IsNullOrEmpty(storedKey))
+        return Results.Redirect("/config/ui");
+
+    var map = userMap.GetAll();
+    if (map.TryGetValue(discordId, out var existing))
+    {
+        existing.RemoveAll(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase));
+        if (existing.Count == 0) map.Remove(discordId);
+        else map[discordId] = existing;
+        userMap.Save(map);
+    }
+    return Results.Redirect("/config/ui");
 });
 
 app.Run();
