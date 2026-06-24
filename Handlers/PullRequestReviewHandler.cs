@@ -67,7 +67,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
 
         if (_userMap.GitHubToDiscord(review.User.Login) is string reviewerId)

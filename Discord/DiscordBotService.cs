@@ -84,6 +84,112 @@ public class DiscordBotService : IHostedService
         return Task.FromResult<IMessageChannel?>(thread ?? channel);
     }
 
+    /// <summary>
+    /// Resolves the thread for a PR event. If the PR is tracked, returns its thread.
+    /// If not tracked, searches recent channel messages for one whose embed URL matches
+    /// the PR URL. If found, adopts it (creating a thread if needed) and registers it
+    /// in the prmap. If not found, posts a stub message, creates a thread from it, and
+    /// registers that.
+    /// </summary>
+    public async Task<IMessageChannel> ResolveOrCreatePrThreadAsync(
+        IMessageChannel channel,
+        PrMapEntry? stored,
+        PrMapService prMap,
+        string prNodeId,
+        int prNumber,
+        string prTitle,
+        string prHtmlUrl,
+        CancellationToken ct = default)
+    {
+        // Happy path — already tracked with a thread
+        if (stored?.ThreadId is ulong existingThread && existingThread != 0)
+        {
+            var t = _client.GetChannel(existingThread) as IMessageChannel;
+            if (t != null) return t;
+        }
+
+        if (channel is not ITextChannel textChannel)
+            return channel;
+
+        // Search recent messages for one whose embed URL matches the PR
+        IMessage? found = null;
+        ulong lastId = 0;
+        for (var page = 0; page < 3 && found == null; page++)
+        {
+            var batch = lastId == 0
+                ? await textChannel.GetMessagesAsync(100).FlattenAsync()
+                : await textChannel.GetMessagesAsync(lastId, Direction.Before, 100).FlattenAsync();
+
+            var messages = batch.ToList();
+            if (messages.Count == 0) break;
+
+            foreach (var msg in messages)
+            {
+                if (msg.Embeds.Any(e => e.Url == prHtmlUrl))
+                {
+                    found = msg;
+                    break;
+                }
+            }
+
+            lastId = messages[^1].Id;
+        }
+
+        if (found != null)
+        {
+            _logger.LogInformation("[PrResolve] Found existing message {MsgId} for PR #{PrNumber}", found.Id, prNumber);
+
+            ulong threadId;
+            try
+            {
+                threadId = await CreateThreadAsync(textChannel.Id, found.Id, $"PR #{prNumber} — {prTitle}", ct);
+            }
+            catch
+            {
+                threadId = 0;
+            }
+
+            prMap.Set(prNodeId, new PrMapEntry
+            {
+                MessageId = found.Id,
+                ThreadId = threadId != 0 ? threadId : null,
+                PrNumber = prNumber,
+                PrTitle = prTitle,
+            });
+
+            if (threadId != 0 && _client.GetChannel(threadId) is IMessageChannel threadCh)
+                return threadCh;
+
+            return channel;
+        }
+
+        // Not found — post a stub and create a thread from it
+        _logger.LogInformation("[PrResolve] No existing message found for PR #{PrNumber}, creating stub", prNumber);
+
+        var stub = await textChannel.SendMessageAsync(
+            embed: new EmbedBuilder()
+                .WithTitle($"PR #{prNumber} — {prTitle}")
+                .WithUrl(prHtmlUrl)
+                .WithColor(new Color(0x444466))
+                .WithDescription("Activity was received for this PR before it was tracked.")
+                .Build());
+
+        var newThreadId = await CreateThreadAsync(textChannel.Id, stub.Id, $"PR #{prNumber} — {prTitle}", ct);
+
+        prMap.Set(prNodeId, new PrMapEntry
+        {
+            MessageId = stub.Id,
+            ThreadId = newThreadId != 0 ? newThreadId : null,
+            PrNumber = prNumber,
+            PrTitle = prTitle,
+        });
+
+        if (newThreadId != 0 && _client.GetChannel(newThreadId) is IMessageChannel newThread)
+            return newThread;
+
+        return channel;
+    }
+
     public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed? embed, CancellationToken ct = default)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
