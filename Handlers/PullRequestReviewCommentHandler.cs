@@ -15,6 +15,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
     private readonly CommentMapService _commentMap;
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
+    private readonly ScoreService _scores;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestReviewCommentHandler> _logger;
 
@@ -24,6 +25,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
         CommentMapService commentMap,
         UserMapService userMap,
         PreferencesService prefs,
+        ScoreService scores,
         IConfiguration config,
         ILogger<PullRequestReviewCommentHandler> logger)
     {
@@ -32,6 +34,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
         _commentMap = commentMap;
         _userMap = userMap;
         _prefs = prefs;
+        _scores = scores;
         _config = config;
         _logger = logger;
     }
@@ -80,7 +83,11 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
 
         var msg = await _discord.SendMessageAsync(target.Id, string.Join(' ', mentionedPings), embed, ct);
         if (msg != null)
+        {
             _commentMap.Set(comment.Id, new CommentMapEntry { MessageId = msg.Id, ChannelId = target.Id });
+            if (_userMap.GitHubToDiscord(comment.User.Login) is string commenterId)
+                _scores.Award(commenterId, ScoreCategory.Comment);
+        }
 
         if (stored != null && !string.IsNullOrEmpty(commentReaction))
             await _discord.AddReactionAsync(channel.Id, stored.MessageId, commentReaction, ct);

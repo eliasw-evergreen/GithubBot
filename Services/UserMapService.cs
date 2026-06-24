@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace GithubBot.Services;
 
@@ -52,4 +53,16 @@ public class UserMapService
     }
 
     public Dictionary<string, List<string>> GetAll() => Load();
+
+    // Returns distinct Discord IDs for all @mentions in text that have a mapping
+    public IEnumerable<string> DiscordIdsFromMentions(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return [];
+        var matches = Regex.Matches(text, @"@([a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?)");
+        return matches
+            .Select(m => GitHubToDiscord(m.Groups[1].Value))
+            .Where(id => id != null)
+            .Select(id => id!)
+            .Distinct();
+    }
 }

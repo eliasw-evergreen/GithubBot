@@ -13,6 +13,7 @@ public class PullRequestHandler : IGitHubEventHandler
     private readonly PrMapService _prMap;
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
+    private readonly ScoreService _scores;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestHandler> _logger;
 
@@ -21,6 +22,7 @@ public class PullRequestHandler : IGitHubEventHandler
         PrMapService prMap,
         UserMapService userMap,
         PreferencesService prefs,
+        ScoreService scores,
         IConfiguration config,
         ILogger<PullRequestHandler> logger)
     {
@@ -28,6 +30,7 @@ public class PullRequestHandler : IGitHubEventHandler
         _prMap = prMap;
         _userMap = userMap;
         _prefs = prefs;
+        _scores = scores;
         _config = config;
         _logger = logger;
     }
@@ -62,6 +65,17 @@ public class PullRequestHandler : IGitHubEventHandler
                 await HandleEdited(pr, repo, ct);
                 break;
         }
+    }
+
+    private void AwardPrPoints(PullRequest pr, ScoreCategory category)
+    {
+        var recipients = new HashSet<string>();
+        if (_userMap.GitHubToDiscord(pr.User.Login) is string authorId)
+            recipients.Add(authorId);
+        foreach (var id in _userMap.DiscordIdsFromMentions(pr.Body))
+            recipients.Add(id);
+        foreach (var id in recipients)
+            _scores.Award(id, category);
     }
 
     private global::Discord.Embed BuildPrEmbed(PullRequest pr, Repository repo, string action)
@@ -138,6 +152,7 @@ public class PullRequestHandler : IGitHubEventHandler
         var msg = await _discord.SendMessageAsync(channel.Id, $"{rolePrefix}{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed, ct);
         if (msg != null)
         {
+            AwardPrPoints(pr, ScoreCategory.PrOpened);
             var threadId = await _discord.CreateThreadAsync(channel.Id, msg.Id,
                 $"PR #{pr.Number} — {pr.Title}", ct);
             _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId });
@@ -187,6 +202,7 @@ public class PullRequestHandler : IGitHubEventHandler
                 }
             }
 
+            if (merged) AwardPrPoints(pr, ScoreCategory.PrMerged);
             stored.ClosedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _prMap.Save();
         }

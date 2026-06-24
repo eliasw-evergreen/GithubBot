@@ -13,6 +13,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
     private readonly PrMapService _prMap;
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
+    private readonly ScoreService _scores;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestReviewHandler> _logger;
 
@@ -21,6 +22,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         PrMapService prMap,
         UserMapService userMap,
         PreferencesService prefs,
+        ScoreService scores,
         IConfiguration config,
         ILogger<PullRequestReviewHandler> logger)
     {
@@ -28,6 +30,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         _prMap = prMap;
         _userMap = userMap;
         _prefs = prefs;
+        _scores = scores;
         _config = config;
         _logger = logger;
     }
@@ -58,6 +61,9 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var stored = _prMap.Get(pr.NodeId);
         var target = await _discord.GetTargetChannel(channel, stored, ct);
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
+
+        if (_userMap.GitHubToDiscord(review.User.Login) is string reviewerId)
+            _scores.Award(reviewerId, ScoreCategory.ReviewSubmitted);
 
         if (stored != null)
         {

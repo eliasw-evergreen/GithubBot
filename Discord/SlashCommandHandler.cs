@@ -11,6 +11,7 @@ public class SlashCommandHandler
     private readonly UserMapService _userMap;
     private readonly PrMapService _prMap;
     private readonly PreferencesService _prefs;
+    private readonly ScoreService _scores;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -21,6 +22,7 @@ public class SlashCommandHandler
         UserMapService userMap,
         PrMapService prMap,
         PreferencesService prefs,
+        ScoreService scores,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
@@ -28,6 +30,7 @@ public class SlashCommandHandler
         _userMap = userMap;
         _prMap = prMap;
         _prefs = prefs;
+        _scores = scores;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -141,6 +144,21 @@ public class SlashCommandHandler
                     .Build(),
                 guildId);
 
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("score")
+                    .WithDescription("Show your score and stats, or view another user's score")
+                    .AddOption("user", ApplicationCommandOptionType.User, "User to look up (defaults to yourself)", isRequired: false)
+                    .Build(),
+                guildId);
+
+            await rest.CreateGuildCommand(
+                new SlashCommandBuilder()
+                    .WithName("leaderboard")
+                    .WithDescription("Show the top scorers")
+                    .Build(),
+                guildId);
+
             _logger.LogInformation("Slash commands registered");
         }
         catch (Exception ex)
@@ -191,6 +209,12 @@ public class SlashCommandHandler
                 break;
             case "clearpingrole":
                 await HandleClearPingRole(command);
+                break;
+            case "score":
+                await HandleScore(command);
+                break;
+            case "leaderboard":
+                await HandleLeaderboard(command);
                 break;
         }
     }
@@ -360,6 +384,60 @@ public class SlashCommandHandler
         await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithColor(Color.Green)
             .WithDescription($"PR ping role set to {role.Mention}")
+            .WithCurrentTimestamp()
+            .Build()]);
+    }
+
+    private async Task HandleScore(SocketSlashCommand command)
+    {
+        var targetUser = command.Data.Options.FirstOrDefault(o => o.Name == "user")?.Value as SocketUser ?? command.User;
+        var entry = _scores.GetScore(targetUser.Id.ToString());
+
+        if (entry == null)
+        {
+            await command.RespondAsync($"<@{targetUser.Id}> has no score yet.", ephemeral: true);
+            return;
+        }
+
+        var isSelf = targetUser.Id == command.User.Id;
+        var title = isSelf ? "Your Score" : $"{targetUser.GlobalName ?? targetUser.Username}'s Score";
+
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithTitle(title)
+            .WithColor(new Color(0xF1C40F))
+            .WithThumbnailUrl(targetUser.GetAvatarUrl() ?? targetUser.GetDefaultAvatarUrl())
+            .AddField("Total", $"**{entry.Total}** pts", inline: true)
+            .AddField("​", "​", inline: true)
+            .AddField("​", "​", inline: true)
+            .AddField("PR Opened", $"{entry.PrOpened} pts ({entry.PrOpened / ScoreService.PointsPrOpened} PR{(entry.PrOpened / ScoreService.PointsPrOpened == 1 ? "" : "s")})", inline: true)
+            .AddField("PR Merged", $"{entry.PrMerged} pts ({entry.PrMerged / ScoreService.PointsPrMerged} PR{(entry.PrMerged / ScoreService.PointsPrMerged == 1 ? "" : "s")})", inline: true)
+            .AddField("Reviews", $"{entry.ReviewSubmitted} pts ({entry.ReviewSubmitted / ScoreService.PointsReview} review{(entry.ReviewSubmitted / ScoreService.PointsReview == 1 ? "" : "s")})", inline: true)
+            .AddField("Comments", $"{entry.Comments} pts ({entry.Comments / ScoreService.PointsComment} comment{(entry.Comments / ScoreService.PointsComment == 1 ? "" : "s")})", inline: true)
+            .WithCurrentTimestamp()
+            .Build()]);
+    }
+
+    private async Task HandleLeaderboard(SocketSlashCommand command)
+    {
+        var board = _scores.GetLeaderboard().Take(10).ToList();
+
+        if (board.Count == 0)
+        {
+            await command.RespondAsync("No scores recorded yet.", ephemeral: true);
+            return;
+        }
+
+        var medals = new[] { "🥇", "🥈", "🥉" };
+        var lines = board.Select((entry, i) =>
+        {
+            var prefix = i < medals.Length ? medals[i] : $"**#{i + 1}**";
+            return $"{prefix} <@{entry.DiscordId}> — **{entry.Entry.Total}** pts";
+        });
+
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithTitle("Leaderboard")
+            .WithColor(new Color(0xF1C40F))
+            .WithDescription(string.Join('\n', lines))
             .WithCurrentTimestamp()
             .Build()]);
     }

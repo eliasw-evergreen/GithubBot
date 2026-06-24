@@ -72,6 +72,7 @@ builder.Services.AddSingleton(new UserMapService(Path.Combine(dataPath, "usermap
 builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.json")));
 builder.Services.AddSingleton(new CommentMapService(Path.Combine(dataPath, "commentmap.json")));
 builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
+builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
 builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
 {
     GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,
