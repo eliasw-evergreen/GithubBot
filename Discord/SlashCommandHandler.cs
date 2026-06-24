@@ -112,7 +112,8 @@ public class SlashCommandHandler
 
                 new SlashCommandBuilder()
                     .WithName("listmappings")
-                    .WithDescription("List all Discord ↔ GitHub/DevOps user mappings")
+                    .WithDescription("List Discord ↔ GitHub/DevOps mappings")
+                    .AddOption("user", ApplicationCommandOptionType.User, "Show mappings for a specific user (omit for all)", isRequired: false)
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -349,27 +350,48 @@ public class SlashCommandHandler
     private async Task HandleListMappings(SocketSlashCommand command)
     {
         var map = _userMap.GetAll();
-        if (map.Count == 0)
-        {
-            await command.RespondAsync("No mappings configured yet.", ephemeral: true);
-            return;
-        }
+        var targetUser = command.Data.Options.FirstOrDefault(o => o.Name == "user")?.Value as SocketUser;
 
-        var lines = new List<string>();
-        foreach (var (discordId, entry) in map)
+        if (targetUser != null)
         {
-            var parts = new List<string>();
-            if (entry.Gh.Count > 0)  parts.Add($"GH: {string.Join(", ", entry.Gh)}");
-            if (entry.Ado.Count > 0) parts.Add($"ADO: {string.Join(", ", entry.Ado)}");
-            if (parts.Count > 0)
-                lines.Add($"<@{discordId}> — {string.Join(" · ", parts)}");
-        }
+            var discordId = targetUser.Id.ToString();
+            if (!map.TryGetValue(discordId, out var entry) || (entry.Gh.Count == 0 && entry.Ado.Count == 0))
+            {
+                await command.RespondAsync($"<@{discordId}> has no mappings.", ephemeral: true);
+                return;
+            }
 
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithTitle("User Mappings")
-            .WithColor(new Color(0x5865F2))
-            .WithDescription(string.Join('\n', lines))
-            .Build()]);
+            var eb = new EmbedBuilder()
+                .WithTitle($"Mappings for {targetUser.Username}")
+                .WithColor(new Color(0x5865F2));
+            if (entry.Gh.Count > 0)  eb.AddField("GitHub", string.Join("\n", entry.Gh));
+            if (entry.Ado.Count > 0) eb.AddField("DevOps", string.Join("\n", entry.Ado));
+            await command.RespondAsync(ephemeral: true, embeds: [eb.Build()]);
+        }
+        else
+        {
+            if (map.Count == 0)
+            {
+                await command.RespondAsync("No mappings configured yet.", ephemeral: true);
+                return;
+            }
+
+            var lines = new List<string>();
+            foreach (var (discordId, entry) in map)
+            {
+                var parts = new List<string>();
+                if (entry.Gh.Count > 0)  parts.Add($"GH: {string.Join(", ", entry.Gh)}");
+                if (entry.Ado.Count > 0) parts.Add($"ADO: {string.Join(", ", entry.Ado)}");
+                if (parts.Count > 0)
+                    lines.Add($"<@{discordId}> — {string.Join(" · ", parts)}");
+            }
+
+            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+                .WithTitle("User Mappings")
+                .WithColor(new Color(0x5865F2))
+                .WithDescription(string.Join('\n', lines))
+                .Build()]);
+        }
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)
