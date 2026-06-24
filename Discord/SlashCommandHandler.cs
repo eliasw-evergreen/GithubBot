@@ -55,9 +55,12 @@ public class SlashCommandHandler
 
         if (_prefs.GetCommandsVersion() == CommandsVersion)
         {
-            _logger.LogInformation("Slash commands up to date ({Version}), skipping registration", CommandsVersion);
+            _logger.LogInformation("Slash commands already at {Version}, skipping registration", CommandsVersion);
             return;
         }
+
+        _logger.LogInformation("Registering slash commands (stored={Stored}, current={Current})",
+            _prefs.GetCommandsVersion() ?? "none", CommandsVersion);
 
         var rest = _client.Rest;
 
