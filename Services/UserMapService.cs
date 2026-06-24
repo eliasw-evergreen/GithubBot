@@ -1,25 +1,62 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace GithubBot.Services;
 
+public class UserMapEntry
+{
+    [JsonPropertyName("gh")]
+    public List<string> Gh { get; set; } = [];
+
+    [JsonPropertyName("ado")]
+    public List<string> Ado { get; set; } = [];
+}
+
 public class UserMapService
 {
     private readonly string _filePath;
-    private Dictionary<string, List<string>>? _cache;
+    private Dictionary<string, UserMapEntry>? _cache;
 
     public UserMapService(string filePath)
     {
         _filePath = filePath;
     }
 
-    private Dictionary<string, List<string>> Load()
+    private Dictionary<string, UserMapEntry> Load()
     {
         if (_cache != null) return _cache;
         try
         {
             var json = File.ReadAllText(_filePath);
-            _cache = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json) ?? [];
+            using var doc = JsonDocument.Parse(json);
+
+            var result = new Dictionary<string, UserMapEntry>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Object)
+                {
+                    // New format
+                    result[prop.Name] = JsonSerializer.Deserialize<UserMapEntry>(prop.Value.GetRawText()) ?? new();
+                }
+                else if (prop.Value.ValueKind == JsonValueKind.Array)
+                {
+                    // Migrate from old flat list format
+                    var entry = new UserMapEntry();
+                    foreach (var el in prop.Value.EnumerateArray())
+                    {
+                        var s = el.GetString() ?? "";
+                        if (s.StartsWith("ado-name:", StringComparison.OrdinalIgnoreCase))
+                            entry.Ado.Add(s[9..]);
+                        else if (s.StartsWith("ado:", StringComparison.OrdinalIgnoreCase))
+                            entry.Ado.Add(s[4..]);
+                        else if (!string.IsNullOrEmpty(s))
+                            entry.Gh.Add(s);
+                    }
+                    result[prop.Name] = entry;
+                }
+            }
+            _cache = result;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -33,34 +70,37 @@ public class UserMapService
         return _cache;
     }
 
-    public void Save(Dictionary<string, List<string>> map)
+    public void Save(Dictionary<string, UserMapEntry> map)
     {
         _cache = map;
         var json = JsonSerializer.Serialize(map, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
 
+    public Dictionary<string, UserMapEntry> GetAll() => Load();
+
     public string? GitHubToDiscord(string githubLogin)
     {
         var login = githubLogin.ToLowerInvariant();
-        var map = Load();
-        foreach (var (discordId, entries) in map)
-        {
-            if (entries.Any(n => !n.StartsWith("ado:") && n.Equals(login, StringComparison.OrdinalIgnoreCase)))
+        foreach (var (discordId, entry) in Load())
+            if (entry.Gh.Any(g => g.Equals(login, StringComparison.OrdinalIgnoreCase)))
                 return discordId;
-        }
         return null;
     }
 
     public string? AdoToDiscord(string email)
     {
-        var key = $"ado:{email.ToLowerInvariant()}";
-        var map = Load();
-        foreach (var (discordId, entries) in map)
-        {
-            if (entries.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)))
+        foreach (var (discordId, entry) in Load())
+            if (entry.Ado.Any(a => a.Contains('@') && a.Equals(email, StringComparison.OrdinalIgnoreCase)))
                 return discordId;
-        }
+        return null;
+    }
+
+    public string? AdoDisplayNameToDiscord(string displayName)
+    {
+        foreach (var (discordId, entry) in Load())
+            if (entry.Ado.Any(a => !a.Contains('@') && a.Equals(displayName.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return discordId;
         return null;
     }
 
@@ -68,33 +108,13 @@ public class UserMapService
     {
         var discordId = AdoToDiscord(email);
         if (discordId == null) return;
-        var key = $"ado-name:{displayName.Trim()}";
         var map = Load();
-        if (!map.TryGetValue(discordId, out var entries)) return;
-        if (entries.Contains(key)) return;
-        entries.Add(key);
+        if (!map.TryGetValue(discordId, out var entry)) return;
+        var name = displayName.Trim();
+        if (entry.Ado.Any(a => a.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
+        entry.Ado.Add(name);
         Save(map);
     }
-
-    public string? AdoDisplayNameToDiscord(string displayName)
-    {
-        var key = $"ado-name:{displayName.Trim()}";
-        var map = Load();
-        foreach (var (discordId, entries) in map)
-            if (entries.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)))
-                return discordId;
-        return null;
-    }
-
-    // Encode a raw value (email or GitHub username) into its storage form
-    public static string Encode(string value)
-        => value.Contains('@') ? $"ado:{value.ToLowerInvariant()}" : value;
-
-    // Human-readable label for display in Discord
-    public static string Label(string stored)
-        => stored.StartsWith("ado:") ? $"`{stored[4..]}` (DevOps)" : $"**[{stored}](https://github.com/{stored})**";
-
-    public Dictionary<string, List<string>> GetAll() => Load();
 
     // Returns distinct Discord IDs for all @mentions in text that have a mapping
     public IEnumerable<string> DiscordIdsFromMentions(string? text)

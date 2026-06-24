@@ -14,7 +14,7 @@ public static class ConfigUiHtml
     public static string Render(
         List<GuildUserInfo> guildUsers,
         List<GuildRoleInfo> roles,
-        Dictionary<string, List<string>> map,
+        Dictionary<string, UserMapEntry> map,
         List<ReactionInfo> reactions,
         List<ChannelInfo> textChannels,
         List<ChannelConfigInfo> channelConfigs,
@@ -86,19 +86,23 @@ public static class ConfigUiHtml
         sb.Append("<table><thead><tr><th>Discord User</th><th>Mappings</th><th>Add</th><th>Roulette</th></tr></thead><tbody>");
         foreach (var user in guildUsers)
         {
-            map.TryGetValue(user.Id, out var entries);
-            entries ??= [];
+            map.TryGetValue(user.Id, out var userEntry);
+            var ghList  = userEntry?.Gh  ?? [];
+            var adoList = userEntry?.Ado ?? [];
             var roleAttr = string.Join(",", user.RoleIds);
             var excluded = rouletteExclusions.Contains(user.Id);
             sb.Append($"<tr data-roles=\"{roleAttr}\"><td><div class=\"uname\">{Esc(user.Name)}</div><div class=\"uid\">{user.Id}</div></td><td>");
-            foreach (var entry in entries)
+            foreach (var v in ghList)
             {
-                var isAdo = entry.StartsWith("ado:", StringComparison.OrdinalIgnoreCase);
-                var label = isAdo ? entry[4..] : entry;
-                sb.Append($"<span class=\"tag {(isAdo ? "tag-ado" : "tag-gh")}\" title=\"{(isAdo ? "DevOps" : "GitHub")}\">{Esc(label)}</span>");
-                sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="stored_key" value="{Esc(entry)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+                sb.Append($"<span class=\"tag tag-gh\" title=\"GitHub\">{Esc(v)}</span>");
+                sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="gh"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
             }
-            if (entries.Count == 0) sb.Append("<span class=\"no-entries\">—</span>");
+            foreach (var v in adoList)
+            {
+                sb.Append($"<span class=\"tag tag-ado\" title=\"DevOps\">{Esc(v)}</span>");
+                sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="ado"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+            }
+            if (ghList.Count == 0 && adoList.Count == 0) sb.Append("<span class=\"no-entries\">—</span>");
             sb.Append($"""
                 </td><td><form method="post" action="/config/ui/add" class="f">
                 <input type="hidden" name="discord_id" value="{user.Id}">
@@ -366,9 +370,9 @@ public static class ConfigUiHtml
                 mappingsCell.querySelector('.no-entries')?.remove();
                 const cls = isAdo ? 'tag-ado' : 'tag-gh';
                 const title = isAdo ? 'DevOps' : 'GitHub';
-                const storedKey = isAdo ? username : username;
+                const arrayName = isAdo ? 'ado' : 'gh';
                 const tagHtml = `<span class="tag ${cls}" title="${title}">${username}</span>`;
-                const removeHtml = `<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="${fd.get('discord_id')}"><input type="hidden" name="stored_key" value="${isAdo ? 'ado:' + username : username}"><button type="submit" class="remove" title="Remove">✕</button></form>`;
+                const removeHtml = `<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="${fd.get('discord_id')}"><input type="hidden" name="array" value="${arrayName}"><input type="hidden" name="value" value="${username}"><button type="submit" class="remove" title="Remove">✕</button></form>`;
                 mappingsCell.insertAdjacentHTML('beforeend', tagHtml + removeHtml);
                 form.querySelector('input[name="username"]').value = '';
                 return;

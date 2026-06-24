@@ -361,12 +361,12 @@ app.MapPost("/config/ui/add", async (HttpContext context, UserMapService userMap
     if (string.IsNullOrEmpty(discordId) || string.IsNullOrEmpty(username))
         return Results.Redirect("/config/ui");
 
-    var storedKey = type == "devops" ? UserMapService.Encode(username) : username;
     var map = userMap.GetAll();
-    if (!map.TryGetValue(discordId, out var existing)) existing = [];
-    if (!existing.Any(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)))
+    if (!map.TryGetValue(discordId, out var existing)) existing = new();
+    var list = type == "devops" ? existing.Ado : existing.Gh;
+    if (!list.Any(n => n.Equals(username, StringComparison.OrdinalIgnoreCase)))
     {
-        existing.Add(storedKey);
+        list.Add(username);
         map[discordId] = existing;
         userMap.Save(map);
     }
@@ -380,17 +380,18 @@ app.MapPost("/config/ui/remove", async (HttpContext context, UserMapService user
 
     var form = await context.Request.ReadFormAsync();
     var discordId = form["discord_id"].FirstOrDefault()?.Trim();
-    var storedKey = form["stored_key"].FirstOrDefault()?.Trim();
+    var array = form["array"].FirstOrDefault()?.Trim(); // "gh" or "ado"
+    var value = form["value"].FirstOrDefault()?.Trim();
 
-    if (string.IsNullOrEmpty(discordId) || string.IsNullOrEmpty(storedKey))
+    if (string.IsNullOrEmpty(discordId) || string.IsNullOrEmpty(value))
         return Results.Redirect("/config/ui");
 
     var map = userMap.GetAll();
     if (map.TryGetValue(discordId, out var existing))
     {
-        existing.RemoveAll(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase));
-        if (existing.Count == 0) map.Remove(discordId);
-        else map[discordId] = existing;
+        var list = array == "ado" ? existing.Ado : existing.Gh;
+        list.RemoveAll(n => n.Equals(value, StringComparison.OrdinalIgnoreCase));
+        if (existing.Gh.Count == 0 && existing.Ado.Count == 0) map.Remove(discordId);
         userMap.Save(map);
     }
     return Results.Redirect("/config/ui");
