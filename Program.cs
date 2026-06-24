@@ -86,7 +86,7 @@ builder.Services.AddSession(o =>
 });
 builder.Services.AddSingleton(new Discord.WebSocket.DiscordSocketClient(new Discord.WebSocket.DiscordSocketConfig
 {
-    GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent,
+    GatewayIntents = Discord.GatewayIntents.Guilds | Discord.GatewayIntents.MessageContent | Discord.GatewayIntents.GuildMembers,
     // Respect Retry-After / X-RateLimit-Reset-After headers on all requests
     DefaultRetryMode = Discord.RetryMode.RetryRatelimit,
 }));
@@ -225,7 +225,7 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
     var guild = discordClient.GetGuild(guildId);
 
     if (guild != null)
-        await guild.DownloadUsersAsync();
+        try { await guild.DownloadUsersAsync(); } catch { /* intent may not be enabled yet */ }
 
     var guildUsers = guild?.Users
         .OrderBy(u => u.DisplayName)
