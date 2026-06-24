@@ -267,6 +267,11 @@ public static class EmbedBuilders
     private static string StripDevOpsLinks(string? body)
     {
         if (string.IsNullOrEmpty(body)) return "";
-        return DevOpsLinkPattern.Replace(body, "").Trim();
+        return DevOpsLinkPattern.Replace(body, m =>
+        {
+            var urlMatch = DevOpsPattern.Match(m.Value);
+            if (!urlMatch.Success) return "";
+            return $"[#{urlMatch.Groups[1].Value}]({urlMatch.Value.TrimEnd('/')})";
+        }).Trim();
     }
 }
