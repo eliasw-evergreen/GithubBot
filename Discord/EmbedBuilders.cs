@@ -203,19 +203,20 @@ public static class EmbedBuilders
 
     // Matches dev.azure.com and visualstudio.com work item URLs
     private static readonly Regex DevOpsPattern = new(
-        @"https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/(\d+)",
+        @"https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/(\d+)/?",
         RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
 
     private static DevOpsTicket? ExtractDevOpsTicket(string? body)
     {
         if (string.IsNullOrEmpty(body)) return null;
         var m = DevOpsPattern.Match(body);
-        return m.Success ? new DevOpsTicket(m.Value, m.Groups[1].Value) : null;
+        if (!m.Success) return null;
+        return new DevOpsTicket(m.Value.TrimEnd('/'), m.Groups[1].Value);
     }
 
     // Strip DevOps URLs and any markdown [text](devops-url) wrappers around them
     private static readonly Regex DevOpsLinkPattern = new(
-        @"\[([^\]]*)\]\(https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+\)|https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+",
+        @"\[([^\]]*)\]\(https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+/?\)|https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+/?",
         RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
 
     private static string StripDevOpsLinks(string? body)
