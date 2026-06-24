@@ -124,7 +124,7 @@ public class AdoWorkItemHandler
         }
 
         var embed = new EmbedBuilder()
-            .WithTitle($"✏️ {TypeEmoji(wi.WorkItemType).emoji} #{wi.Id} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithTitle($"#{wi.Id} ✏️ {TypeEmoji(wi.WorkItemType).emoji} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
             .WithColor(new Color(0x5865F2))
             .WithUrl(wi.Url);
 
@@ -209,7 +209,7 @@ public class AdoWorkItemHandler
 
         var emoji = TypeEmoji(workItemType).emoji;
         var embed = new EmbedBuilder()
-            .WithTitle($"💬 Comment on {emoji} #{workItemId}{(title != null ? $": {title}" : "")}")
+            .WithTitle($"#{workItemId} 💬 Comment on {emoji}{(title != null ? $": {title}" : "")}")
             .WithColor(new Color(0x57F287))
             .WithUrl(BuildWorkItemUrl(payload, workItemId));
 
@@ -346,7 +346,7 @@ public class AdoWorkItemHandler
         _logger.LogInformation("[ADO] No existing message for work item #{Id}, creating stub", wi.Id);
         var (color, emoji) = TypeEmoji(wi.WorkItemType);
         var stubEmbed = new global::Discord.EmbedBuilder()
-            .WithTitle($"{emoji} {wi.WorkItemType ?? "Work Item"} #{wi.Id}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithTitle($"#{wi.Id} {emoji} {wi.WorkItemType ?? "Work Item"}{(wi.Title != null ? $": {wi.Title}" : "")}")
             .WithColor(color)
             .WithUrl(wi.Url)
             .WithDescription("Activity was received for this work item before it was tracked.")
@@ -449,7 +449,7 @@ public class AdoWorkItemHandler
     {
         var emoji = TypeEmoji(wi.WorkItemType).emoji;
         return new EmbedBuilder()
-            .WithTitle($"{eventTitle} — {emoji} {wi.WorkItemType} #{wi.Id}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithTitle($"#{wi.Id} {eventTitle} — {emoji} {wi.WorkItemType}{(wi.Title != null ? $": {wi.Title}" : "")}")
             .WithColor(color)
             .WithUrl(wi.Url);
     }
