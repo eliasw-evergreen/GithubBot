@@ -52,26 +52,40 @@ public class SlashCommandHandler
             await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("mapuser")
-                    .WithDescription("Add a GitHub username mapping for a Discord user (multiple allowed)")
+                    .WithDescription("Map a GitHub username or DevOps email to a Discord user")
                     .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
-                    .AddOption("github_username", ApplicationCommandOptionType.String, "Their GitHub username", isRequired: true)
+                    .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email", isRequired: true)
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("type")
+                        .WithDescription("Account type to map")
+                        .WithRequired(false)
+                        .WithType(ApplicationCommandOptionType.String)
+                        .AddChoice("GitHub", "github")
+                        .AddChoice("DevOps", "devops"))
                     .Build(),
                 guildId);
 
             await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("unmapuser")
-                    .WithDescription("Remove a GitHub username from a Discord user")
+                    .WithDescription("Remove a username mapping from a Discord user")
                     .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
-                    .AddOption("github_username", ApplicationCommandOptionType.String,
-                        "Specific GitHub username to remove (leave blank to remove all)", isRequired: false)
+                    .AddOption("username", ApplicationCommandOptionType.String,
+                        "Specific username/email to remove (leave blank to remove all)", isRequired: false)
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("type")
+                        .WithDescription("Account type to remove")
+                        .WithRequired(false)
+                        .WithType(ApplicationCommandOptionType.String)
+                        .AddChoice("GitHub", "github")
+                        .AddChoice("DevOps", "devops"))
                     .Build(),
                 guildId);
 
             await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("listmappings")
-                    .WithDescription("Show all Discord <-> GitHub user mappings")
+                    .WithDescription("Show all Discord <-> GitHub/DevOps user mappings")
                     .Build(),
                 guildId);
 
@@ -223,36 +237,41 @@ public class SlashCommandHandler
     private async Task HandleMapUser(SocketSlashCommand command)
     {
         var discordUser = (SocketUser)command.Data.Options.First(o => o.Name == "discord_user").Value;
-        var githubUsername = ((string)command.Data.Options.First(o => o.Name == "github_username").Value).Trim();
-        var map = _userMap.GetAll();
+        var username = ((string)command.Data.Options.First(o => o.Name == "username").Value).Trim();
+        var type = command.Data.Options.FirstOrDefault(o => o.Name == "type")?.Value as string ?? "github";
+        var isAdo = type == "devops";
+        var storedKey = isAdo ? UserMapService.Encode(username) : username;
 
+        var map = _userMap.GetAll();
         if (!map.TryGetValue(discordUser.Id.ToString(), out var existing))
             existing = [];
 
-        if (existing.Any(n => n.Equals(githubUsername, StringComparison.OrdinalIgnoreCase)))
+        if (existing.Any(n => n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)))
         {
-            await command.RespondAsync($"**{githubUsername}** is already mapped to <@{discordUser.Id}>.", ephemeral: true);
+            await command.RespondAsync($"**{username}** is already mapped to <@{discordUser.Id}>.", ephemeral: true);
             return;
         }
 
-        existing.Add(githubUsername);
+        existing.Add(storedKey);
         map[discordUser.Id.ToString()] = existing;
         _userMap.Save(map);
 
-        var all = string.Join(", ", existing.Select(n => $"**[{n}](https://github.com/{n})**"));
+        var all = string.Join(", ", existing.Select(FormatMappingEntry));
         await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
             .WithColor(Color.Green)
             .WithDescription($"<@{discordUser.Id}> is now mapped to: {all}")
             .WithCurrentTimestamp()
             .Build()]);
 
-        _ = Task.Run(() => BackfillMappingAsync(githubUsername, discordUser.Id.ToString()));
+        if (!isAdo)
+            _ = Task.Run(() => BackfillMappingAsync(username, discordUser.Id.ToString()));
     }
 
     private async Task HandleUnmapUser(SocketSlashCommand command)
     {
         var discordUser = (SocketUser)command.Data.Options.First(o => o.Name == "discord_user").Value;
-        var githubUsername = command.Data.Options.FirstOrDefault(o => o.Name == "github_username")?.Value as string;
+        var username = command.Data.Options.FirstOrDefault(o => o.Name == "username")?.Value as string;
+        var type = command.Data.Options.FirstOrDefault(o => o.Name == "type")?.Value as string ?? "github";
         var map = _userMap.GetAll();
 
         if (!map.TryGetValue(discordUser.Id.ToString(), out var existing) || existing.Count == 0)
@@ -261,12 +280,13 @@ public class SlashCommandHandler
             return;
         }
 
-        if (!string.IsNullOrEmpty(githubUsername))
+        if (!string.IsNullOrEmpty(username))
         {
-            var updated = existing.Where(n => !n.Equals(githubUsername, StringComparison.OrdinalIgnoreCase)).ToList();
+            var storedKey = type == "devops" ? UserMapService.Encode(username) : username;
+            var updated = existing.Where(n => !n.Equals(storedKey, StringComparison.OrdinalIgnoreCase)).ToList();
             if (updated.Count == existing.Count)
             {
-                await command.RespondAsync($"**{githubUsername}** was not mapped to <@{discordUser.Id}>.", ephemeral: true);
+                await command.RespondAsync($"**{username}** was not mapped to <@{discordUser.Id}>.", ephemeral: true);
                 return;
             }
             if (updated.Count == 0)
@@ -276,7 +296,7 @@ public class SlashCommandHandler
             _userMap.Save(map);
             await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
                 .WithColor(Color.Orange)
-                .WithDescription($"Removed **{githubUsername}** from <@{discordUser.Id}>'s mappings")
+                .WithDescription($"Removed **{username}** from <@{discordUser.Id}>'s mappings")
                 .WithCurrentTimestamp()
                 .Build()]);
         }
@@ -286,7 +306,7 @@ public class SlashCommandHandler
             _userMap.Save(map);
             await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
                 .WithColor(Color.Orange)
-                .WithDescription($"Removed all GitHub mappings for <@{discordUser.Id}>")
+                .WithDescription($"Removed all mappings for <@{discordUser.Id}>")
                 .WithCurrentTimestamp()
                 .Build()]);
         }
@@ -303,17 +323,19 @@ public class SlashCommandHandler
 
         var lines = entries.Select(kvp =>
         {
-            var links = string.Join(", ", kvp.Value.Select(n => $"**[{n}](https://github.com/{n})**"));
+            var links = string.Join(", ", kvp.Value.Select(FormatMappingEntry));
             return $"<@{kvp.Key}> → {links}";
         });
 
         await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithTitle("Discord ↔ GitHub Mappings")
+            .WithTitle("Discord ↔ GitHub / DevOps Mappings")
             .WithColor(new Color(0x5865F2))
             .WithDescription(string.Join('\n', lines))
             .WithCurrentTimestamp()
             .Build()]);
     }
+
+    private static string FormatMappingEntry(string storedKey) => UserMapService.Label(storedKey);
 
     private async Task HandleSetReaction(SocketSlashCommand command)
     {

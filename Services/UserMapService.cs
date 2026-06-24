@@ -44,13 +44,33 @@ public class UserMapService
     {
         var login = githubLogin.ToLowerInvariant();
         var map = Load();
-        foreach (var (discordId, usernames) in map)
+        foreach (var (discordId, entries) in map)
         {
-            if (usernames.Any(n => n.Equals(login, StringComparison.OrdinalIgnoreCase)))
+            if (entries.Any(n => !n.StartsWith("ado:") && n.Equals(login, StringComparison.OrdinalIgnoreCase)))
                 return discordId;
         }
         return null;
     }
+
+    public string? AdoToDiscord(string email)
+    {
+        var key = $"ado:{email.ToLowerInvariant()}";
+        var map = Load();
+        foreach (var (discordId, entries) in map)
+        {
+            if (entries.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)))
+                return discordId;
+        }
+        return null;
+    }
+
+    // Encode a raw value (email or GitHub username) into its storage form
+    public static string Encode(string value)
+        => value.Contains('@') ? $"ado:{value.ToLowerInvariant()}" : value;
+
+    // Human-readable label for display in Discord
+    public static string Label(string stored)
+        => stored.StartsWith("ado:") ? $"`{stored[4..]}` (DevOps)" : $"**[{stored}](https://github.com/{stored})**";
 
     public Dictionary<string, List<string>> GetAll() => Load();
 
