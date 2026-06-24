@@ -53,11 +53,18 @@ public class IssueCommentHandler : IGitHubEventHandler
         var pr = issue.Deserialize<PullRequest>()!;
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
 
+        // issue.html_url is the /issues/ URL; get the real PR URL from the pull_request link object
+        var prHtmlUrl = issue.TryGetProperty("pull_request", out var prLink) &&
+                        prLink.TryGetProperty("html_url", out var urlEl)
+            ? urlEl.GetString() ?? pr.HtmlUrl
+            : pr.HtmlUrl;
+
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
 
-        var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
+        // issue.node_id is the issue node ID, not the PR node ID — fall back to lookup by PR number
+        var stored = _prMap.Get(pr.NodeId) ?? _prMap.GetByPrNumber(pr.Number);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, prHtmlUrl, ct);
         var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
 
         if (action == "deleted")
@@ -100,8 +107,9 @@ public class IssueCommentHandler : IGitHubEventHandler
             }
         }
 
-        if (stored != null && !string.IsNullOrEmpty(commentReaction))
-            await _discord.AddReactionAsync(channel.Id, stored.MessageId, commentReaction, ct);
+        var storedForReaction = _prMap.Get(pr.NodeId) ?? _prMap.GetByPrNumber(pr.Number);
+        if (storedForReaction != null && !string.IsNullOrEmpty(commentReaction))
+            await _discord.AddReactionAsync(channel.Id, storedForReaction.MessageId, commentReaction, ct);
     }
 
     private List<string> ExtractGithubMentions(string? text)

@@ -65,6 +65,9 @@ public class PrMapService
         Save();
     }
 
+    public PrMapEntry? GetByPrNumber(int prNumber)
+        => _map.Values.FirstOrDefault(e => e.PrNumber == prNumber);
+
     public IReadOnlyDictionary<string, PrMapEntry> GetAll() => _map;
 
     public void Prune(int days)
