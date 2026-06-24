@@ -159,26 +159,86 @@ public class AdoWorkItemHandler
 
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
 
-        // If title or description changed, rebuild and edit the original message in-place
-        var editInPlace = changedFields.ValueKind == JsonValueKind.Object &&
-            (changedFields.TryGetProperty("System.Title", out _) ||
-             changedFields.TryGetProperty("System.Description", out _));
+        // Fields that are reflected in the original embed — patch them in-place
+        var embedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "System.Title", "System.Description", "System.State",
+            "System.AssignedTo", "System.AreaPath", "System.IterationPath",
+            "Microsoft.VSTS.Common.Priority", "Microsoft.VSTS.Common.Severity",
+        };
+
+        var hasEmbedChanges = changedFields.ValueKind == JsonValueKind.Object &&
+            changedFields.EnumerateObject().Any(p => embedFields.Contains(p.Name));
 
         var stored = _workItemMap.Get(wi.Id);
-        if (editInPlace && stored != null)
+        if (hasEmbedChanges && stored != null)
         {
-            var updatedEmbed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
-            AddStandardFields(updatedEmbed, wi, showDescription: true);
-            await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
-            // Still post the field-change summary in the thread so it's visible
-            var thread = await ResolveThreadAsync(channelId, wi, ct);
-            await _discord.SendMessageAsync(thread, ping, embed.Build(), ct);
+            var original = await _discord.GetMessageAsync(channelId, stored.MessageId);
+            var originalEmbed = original?.Embeds.FirstOrDefault();
+            if (originalEmbed != null)
+            {
+                var eb = originalEmbed.ToEmbedBuilder();
+
+                // Patch title if it changed
+                if (changedFields.TryGetProperty("System.Title", out var titleChange) &&
+                    titleChange.TryGetProperty("newValue", out var newTitle))
+                {
+                    var wtype = wi.WorkItemType ?? stored.WorkItemType ?? "Work Item";
+                    var emoji = TypeEmoji(wtype).emoji;
+                    eb.WithTitle($"✨ Work Item Created — {emoji} {wtype} #{wi.Id}: {newTitle.GetString()}");
+                    stored.Title = newTitle.GetString();
+                    _workItemMap.Set(wi.Id, stored);
+                }
+
+                // Patch description if it changed
+                if (changedFields.TryGetProperty("System.Description", out var descChange) &&
+                    descChange.TryGetProperty("newValue", out var newDesc))
+                {
+                    var plain = Regex.Replace(newDesc.GetString() ?? "", "<[^>]+>", "").Trim();
+                    if (plain.Length > 1000) plain = plain[..1000] + "…";
+                    eb.WithDescription(plain);
+                }
+
+                // Patch known embed fields by their friendly label
+                var labelMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["System.State"]                   = "State",
+                    ["System.AreaPath"]                = "Area",
+                    ["System.IterationPath"]           = "Iteration",
+                    ["Microsoft.VSTS.Common.Priority"] = "Priority",
+                    ["Microsoft.VSTS.Common.Severity"] = "Severity",
+                };
+                foreach (var (field, label) in labelMap)
+                {
+                    if (!changedFields.TryGetProperty(field, out var fc)) continue;
+                    if (!fc.TryGetProperty("newValue", out var nv)) continue;
+                    var newVal = FormatFieldValue(nv);
+                    var existing = eb.Fields.FirstOrDefault(f => f.Name == label);
+                    if (existing != null) existing.Value = newVal;
+                    else eb.AddField(label, newVal, inline: true);
+                }
+
+                // Patch AssignedTo
+                if (changedFields.TryGetProperty("System.AssignedTo", out var atChange) &&
+                    atChange.TryGetProperty("newValue", out var newAt))
+                {
+                    var rawEmail = newAt.ValueKind == JsonValueKind.Object && newAt.TryGetProperty("uniqueName", out var un)
+                        ? un.GetString() : FormatFieldValue(newAt);
+                    var email = rawEmail?.Trim().Trim('<', '>');
+                    var disc = !string.IsNullOrEmpty(email) ? _userMap.AdoToDiscord(email) : null;
+                    var display = disc != null ? $"<@{disc}>" : email;
+                    var existing = eb.Fields.FirstOrDefault(f => f.Name == "Assigned To");
+                    if (existing != null) existing.Value = display;
+                    else eb.AddField("Assigned To", display, inline: true);
+                }
+
+                await _discord.EditMessageAsync(channelId, stored.MessageId, null, eb.Build());
+            }
         }
-        else
-        {
-            var target = await ResolveThreadAsync(channelId, wi, ct);
-            await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
-        }
+
+        // Always post the field-change summary in the thread
+        var target = await ResolveThreadAsync(channelId, wi, ct);
+        await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
     }
 
     // ── workitem.commented ──────────────────────────────────────────────────
