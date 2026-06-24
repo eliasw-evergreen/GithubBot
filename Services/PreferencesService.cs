@@ -111,6 +111,12 @@ public class PreferencesService
         Save();
     }
 
+    // ── PR description max lines ──────────────────────────────────────────────
+
+    public int? GetPrDescMaxLines() => _data.PrDescMaxLines;
+    public void SetPrDescMaxLines(int? v) { _data.PrDescMaxLines = v; Save(); }
+    public int ResolvePrDescMaxLines() => _data.PrDescMaxLines ?? 10;
+
     // ── Commands version ──────────────────────────────────────────────────────
 
     public string? GetCommandsVersion() => _data.CommandsVersion;
@@ -128,5 +134,6 @@ public class PreferencesService
         public HashSet<string> RouletteExclusions { get; set; } = [];
         public string? ConfigRole { get; set; }
         public string? CommandRole { get; set; }
+        public int? PrDescMaxLines { get; set; }
     }
 }

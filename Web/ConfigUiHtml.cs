@@ -25,7 +25,8 @@ public static class ConfigUiHtml
         string? currentConfigRole,
         string configRoleSource,
         string? currentCommandRole,
-        string commandRoleSource)
+        string commandRoleSource,
+        int? prDescMaxLines)
     {
         var sb = new StringBuilder();
         sb.Append("""
@@ -181,6 +182,17 @@ public static class ConfigUiHtml
         RoleRow("PR Ping Role", currentPingRole, pingRoleSource, "/config/ui/setpingrole", "/config/ui/clearpingrole");
         RoleRow("Config UI Role", currentConfigRole, configRoleSource, "/config/ui/setconfigrole", "/config/ui/clearconfigrole");
         RoleRow("Command Role", currentCommandRole, commandRoleSource, "/config/ui/setcommandrole", "/config/ui/clearcommandrole");
+
+        // PR desc max lines row
+        sb.Append($"""
+            <tr><td>PR Description Max Lines</td><td><span class="reaction-val">{prDescMaxLines?.ToString() ?? "10 (default)"}</span></td><td>
+            <form method="post" action="/config/ui/setprdescmaxlines" class="f">
+            <input type="number" name="value" placeholder="0 = all" style="width:100px" value="{prDescMaxLines?.ToString() ?? ""}">
+            <button type="submit" class="btn">Set</button></form></td><td>
+            """);
+        if (prDescMaxLines.HasValue)
+            sb.Append("""<form method="post" action="/config/ui/clearprdescmaxlines"><button type="submit" class="btn-sm">Clear override</button></form>""");
+        sb.Append("</td></tr>");
 
         sb.Append("</tbody></table>");
 

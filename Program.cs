@@ -344,7 +344,7 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
     var map = userMap.GetAll();
     var allScores = scores.GetAll();
     var rouletteExclusions = prefs.GetRouletteExclusions();
-    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource);
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines());
     return Results.Content(html, "text/html");
 });
 
@@ -495,6 +495,22 @@ app.MapPost("/config/ui/clearcommandrole", async (HttpContext context, Preferenc
 {
     if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
     prefs.ClearCommandRole();
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setprdescmaxlines", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var raw = form["value"].FirstOrDefault()?.Trim();
+    if (int.TryParse(raw, out var v)) prefs.SetPrDescMaxLines(v);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearprdescmaxlines", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    prefs.SetPrDescMaxLines(null);
     return Results.Redirect("/config/ui");
 });
 

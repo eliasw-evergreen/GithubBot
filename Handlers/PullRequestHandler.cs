@@ -79,13 +79,16 @@ public class PullRequestHandler : IGitHubEventHandler
     }
 
     private global::Discord.Embed BuildPrEmbed(PullRequest pr, Repository repo, string action)
-        => EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
+    {
+        return EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
             reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
             readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
             convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
             mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
-            closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]));
+            closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
+            descMaxLines:             _prefs.ResolvePrDescMaxLines());
+    }
 
     private async Task HandleOpenActions(string action, PullRequest pr, Repository repo, CancellationToken ct)
     {
