@@ -119,23 +119,13 @@ public class AdoWorkItemHandler
         var resource = payload.TryGetProperty("resource", out var r) ? r : default;
         if (resource.ValueKind == JsonValueKind.Undefined) return;
 
-        var workItemId = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() :
-                         resource.TryGetProperty("revision", out var revForId) &&
-                         revForId.TryGetProperty("id", out var revId) ? revId.GetInt32() : 0;
-        _logger.LogInformation("[ADO] Comment resource keys: {Keys}", string.Join(", ", resource.EnumerateObject().Select(p => $"{p.Name}={p.Value.ValueKind}")));
-        var commentText = resource.TryGetProperty("text", out var txt) ? txt.GetString() : null;
-
-        string? commenterEmail = null;
-        if (resource.TryGetProperty("revisedBy", out var revisedBy))
-            commenterEmail = revisedBy.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
-
-        string? title = null, workItemType = null;
-        if (resource.TryGetProperty("revision", out var revision) &&
-            revision.TryGetProperty("fields", out var revFields))
-        {
-            title = Str(revFields, "System.Title");
-            workItemType = Str(revFields, "System.WorkItemType");
-        }
+        // resource.id is the work item ID; comment text is in fields["System.History"]
+        var workItemId = resource.TryGetProperty("id", out var wiId) ? wiId.GetInt32() : 0;
+        var fields = resource.TryGetProperty("fields", out var f) ? f : default;
+        var commentText   = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.History") : null;
+        var title         = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.Title") : null;
+        var workItemType  = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.WorkItemType") : null;
+        var commenterEmail = fields.ValueKind == JsonValueKind.Object ? Email(fields, "System.ChangedBy") : null;
 
         var plain = string.IsNullOrWhiteSpace(commentText)
             ? null : Regex.Replace(commentText, "<[^>]+>", "").Trim();
