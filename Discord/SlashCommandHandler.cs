@@ -351,7 +351,8 @@ public class SlashCommandHandler
 
     private async Task HandleConfigUi(SocketSlashCommand command)
     {
-        var token = _configTokens.GenerateToken();
+        var displayName = (command.User as SocketGuildUser)?.DisplayName ?? command.User.GlobalName ?? command.User.Username;
+        var token = _configTokens.GenerateToken(displayName);
         var port = _config.GetValue<int?>("Port") ?? 3000;
         var host = _config["PublicHost"] ?? $"http://localhost:{port}";
         var url = $"{host.TrimEnd('/')}/config?token={token}";

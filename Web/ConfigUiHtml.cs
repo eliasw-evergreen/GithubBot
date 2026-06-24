@@ -50,9 +50,11 @@ public static class ConfigUiHtml
               .filter-bar select { background: #2d2d44; border: 1px solid #4a4a6a; color: #e0e0e0; padding: .35rem .7rem; border-radius: 4px; font-size: .9rem; }
               .source-tag { font-size: .75rem; color: #888; margin-left: .4rem; }
               .reaction-val { font-size: 1.1rem; min-width: 2rem; display: inline-block; }
+              #presence-banner { display: none; background: #92400e; color: #fde68a; padding: .6rem 1rem; border-radius: 6px; margin-bottom: 1.25rem; font-size: .92rem; }
             </style>
             </head>
             <body>
+            <div id="presence-banner"></div>
             <h1>Bot Config</h1>
             """);
 
@@ -154,6 +156,25 @@ public static class ConfigUiHtml
                 row.classList.toggle('hidden', !roles.includes(roleId));
               });
             }
+
+            const others = new Set();
+            function updateBanner() {
+              const banner = document.getElementById('presence-banner');
+              if (others.size === 0) { banner.style.display = 'none'; return; }
+              const names = [...others].join(', ');
+              const verb = others.size === 1 ? 'is' : 'are';
+              banner.textContent = `⚠️ ${names} ${verb} also editing`;
+              banner.style.display = 'block';
+            }
+            const es = new EventSource('/config/ui/events');
+            es.onmessage = e => {
+              const colon = e.data.indexOf(':');
+              const type = e.data.slice(0, colon);
+              const name = e.data.slice(colon + 1);
+              if (type === 'join') others.add(name);
+              else if (type === 'leave') others.delete(name);
+              updateBanner();
+            };
             </script>
             </body></html>
             """);

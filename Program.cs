@@ -205,10 +205,12 @@ app.MapPost("/adowebhook", async (HttpContext context) =>
 app.MapGet("/config", (HttpContext context, ConfigUiTokenService tokens) =>
 {
     var token = context.Request.Query["token"].FirstOrDefault();
-    if (string.IsNullOrEmpty(token) || !tokens.ConsumeToken(token))
+    var username = string.IsNullOrEmpty(token) ? null : tokens.ConsumeToken(token);
+    if (username == null)
         return Results.Text("Invalid or expired link.", statusCode: 403);
 
     context.Session.SetString("auth", "1");
+    context.Session.SetString("username", username);
     return Results.Redirect("/config/ui");
 });
 
@@ -308,6 +310,39 @@ app.MapPost("/config/ui/remove", async (HttpContext context, UserMapService user
         userMap.Save(map);
     }
     return Results.Redirect("/config/ui");
+});
+
+app.MapGet("/config/ui/events", async (HttpContext context, ConfigUiTokenService tokens) =>
+{
+    if (context.Session.GetString("auth") != "1") { context.Response.StatusCode = 401; return; }
+    var username = context.Session.GetString("username") ?? "Unknown";
+    var sessionId = context.Session.Id;
+
+    context.Response.Headers["Content-Type"] = "text/event-stream";
+    context.Response.Headers["Cache-Control"] = "no-cache";
+    context.Response.Headers["X-Accel-Buffering"] = "no"; // disable nginx buffering
+
+    var (channel, currentUsers) = tokens.RegisterSession(sessionId, username);
+    try
+    {
+        // Send users already in the session as initial events
+        foreach (var u in currentUsers)
+        {
+            await context.Response.WriteAsync($"data: join:{u}\n\n");
+            await context.Response.Body.FlushAsync();
+        }
+
+        await foreach (var msg in channel.Reader.ReadAllAsync(context.RequestAborted))
+        {
+            await context.Response.WriteAsync($"data: {msg}\n\n");
+            await context.Response.Body.FlushAsync();
+        }
+    }
+    catch (OperationCanceledException) { }
+    finally
+    {
+        tokens.UnregisterSession(sessionId);
+    }
 });
 
 app.MapPost("/config/ui/setreaction", async (HttpContext context, PreferencesService prefs) =>
