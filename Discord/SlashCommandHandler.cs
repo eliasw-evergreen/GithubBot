@@ -45,7 +45,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v5";
+    private const string CommandsVersion = "v6";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -98,6 +98,12 @@ public class SlashCommandHandler
                     .AddOption("pr", ApplicationCommandOptionType.String, "PR to assign (start typing to search)", isRequired: true, isAutocomplete: true)
                     .AddOption("role", ApplicationCommandOptionType.Role, "Limit candidates to this role", isRequired: false)
                     .AddOption("count", ApplicationCommandOptionType.Integer, "Number of users to assign (default: 1)", isRequired: false)
+                    .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("botdelete")
+                    .WithDescription("Delete one or more bot messages by ID")
+                    .AddOption("message_ids", ApplicationCommandOptionType.String, "Space or comma-separated message IDs", isRequired: true)
                     .Build(),
             };
 
@@ -153,6 +159,9 @@ public class SlashCommandHandler
                 break;
             case "prroulette":
                 await HandlePrRoulette(command);
+                break;
+            case "botdelete":
+                await HandleBotDelete(command);
                 break;
         }
     }
@@ -271,6 +280,44 @@ public class SlashCommandHandler
         {
             await command.RespondAsync(pings, embeds: [embed], ephemeral: false);
         }
+    }
+
+    private async Task HandleBotDelete(SocketSlashCommand command)
+    {
+        var raw = command.Data.Options.FirstOrDefault(o => o.Name == "message_ids")?.Value as string ?? "";
+        var ids = raw.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries);
+
+        if (ids.Length == 0)
+        {
+            await command.RespondAsync("No message IDs provided.", ephemeral: true);
+            return;
+        }
+
+        var channel = command.Channel;
+        var botId = _client.CurrentUser?.Id ?? 0;
+        int deleted = 0, skipped = 0;
+
+        await command.DeferAsync(ephemeral: true);
+
+        foreach (var idStr in ids)
+        {
+            if (!ulong.TryParse(idStr.Trim(), out var msgId)) { skipped++; continue; }
+            try
+            {
+                var msg = await channel.GetMessageAsync(msgId);
+                if (msg == null || msg.Author.Id != botId) { skipped++; continue; }
+                await msg.DeleteAsync();
+                deleted++;
+            }
+            catch { skipped++; }
+        }
+
+        var reply = deleted > 0
+            ? $"Deleted {deleted} message{(deleted == 1 ? "" : "s")}."
+            : "No bot messages were deleted.";
+        if (skipped > 0) reply += $" {skipped} ID{(skipped == 1 ? "" : "s")} skipped (not found, not mine, or invalid).";
+
+        await command.FollowupAsync(reply, ephemeral: true);
     }
 
     private async Task HandleScore(SocketSlashCommand command)
