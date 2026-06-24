@@ -61,10 +61,11 @@ public class DiscordBotService : IHostedService
         await _client.StopAsync();
     }
 
-    private async Task OnReady()
+    private Task OnReady()
     {
         _logger.LogInformation("Logged in as {User}", _client.CurrentUser?.Username ?? "unknown");
-        await _slashHandler.RegisterAsync();
+        _ = Task.Run(_slashHandler.RegisterAsync);
+        return Task.CompletedTask;
     }
 
     public Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
