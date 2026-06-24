@@ -9,6 +9,7 @@ logs/
 usermap.json
 prmap.json
 commentmap.json
+reviewmap.json
 preferences.json
 scores.json
 roulette.json
