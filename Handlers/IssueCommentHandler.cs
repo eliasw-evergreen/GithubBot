@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Discord;
 using GithubBot.Discord;
 using GithubBot.Models;
 using GithubBot.Services;
