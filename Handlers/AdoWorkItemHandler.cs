@@ -453,10 +453,10 @@ public class AdoWorkItemHandler
             var lastSpace = s.LastIndexOf(' ');
             if (lastSpace >= 0)
             {
-                var tail = s.Substring(lastSpace + 1).Trim();
+                var tail = s.Substring(lastSpace + 1).Trim().Trim('<', '>');
                 if (tail.Contains('@')) return tail;
             }
-            return s;
+            return s.Trim('<', '>');
         }
         return null;
     }
