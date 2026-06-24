@@ -288,10 +288,16 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
     var currentPingRole = prefs.ResolvePingRole(config["Roles:PrPing"]);
     var pingRoleSource = prefs.GetPingRole() != null ? "prefs" : (!string.IsNullOrEmpty(config["Roles:PrPing"]) ? ".env" : "unset");
 
+    var currentConfigRole = prefs.ResolveConfigRole(config["Roles:Config"]);
+    var configRoleSource = prefs.GetConfigRole() != null ? "prefs" : (!string.IsNullOrEmpty(config["Roles:Config"]) ? ".env" : "unset");
+
+    var currentCommandRole = prefs.ResolveCommandRole(config["Roles:Command"]);
+    var commandRoleSource = prefs.GetCommandRole() != null ? "prefs" : (!string.IsNullOrEmpty(config["Roles:Command"]) ? ".env" : "unset");
+
     var map = userMap.GetAll();
     var allScores = scores.GetAll();
     var rouletteExclusions = prefs.GetRouletteExclusions();
-    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions);
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource);
     return Results.Content(html, "text/html");
 });
 
@@ -409,6 +415,38 @@ app.MapPost("/config/ui/clearpingrole", async (HttpContext context, PreferencesS
 {
     if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
     prefs.ClearPingRole();
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setconfigrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var roleId = form["role_id"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(roleId)) prefs.SetConfigRole(roleId);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearconfigrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    prefs.ClearConfigRole();
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setcommandrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var roleId = form["role_id"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(roleId)) prefs.SetCommandRole(roleId);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearcommandrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    prefs.ClearCommandRole();
     return Results.Redirect("/config/ui");
 });
 

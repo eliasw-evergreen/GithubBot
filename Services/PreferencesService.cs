@@ -64,6 +64,28 @@ public class PreferencesService
         return raw == null ? null : StripDigits(raw);
     }
 
+    // ── Config role (configui) ────────────────────────────────────────────────
+
+    public string? GetConfigRole() => _data.ConfigRole;
+    public void SetConfigRole(string roleId) { _data.ConfigRole = StripDigits(roleId); Save(); }
+    public void ClearConfigRole() { _data.ConfigRole = null; Save(); }
+    public string? ResolveConfigRole(string? envDefault)
+    {
+        var raw = _data.ConfigRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+        return raw == null ? null : StripDigits(raw);
+    }
+
+    // ── Command role (/score, /leaderboard, /prroulette) ──────────────────────
+
+    public string? GetCommandRole() => _data.CommandRole;
+    public void SetCommandRole(string roleId) { _data.CommandRole = StripDigits(roleId); Save(); }
+    public void ClearCommandRole() { _data.CommandRole = null; Save(); }
+    public string? ResolveCommandRole(string? envDefault)
+    {
+        var raw = _data.CommandRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+        return raw == null ? null : StripDigits(raw);
+    }
+
     // ── Channels ──────────────────────────────────────────────────────────────
 
     public string? GetChannel(string key)
@@ -104,5 +126,7 @@ public class PreferencesService
         public Dictionary<string, string> Channels { get; set; } = [];
         public string? CommandsVersion { get; set; }
         public HashSet<string> RouletteExclusions { get; set; } = [];
+        public string? ConfigRole { get; set; }
+        public string? CommandRole { get; set; }
     }
 }

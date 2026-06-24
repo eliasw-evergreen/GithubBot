@@ -21,7 +21,11 @@ public static class ConfigUiHtml
         string? currentPingRole,
         string pingRoleSource,
         IReadOnlyDictionary<string, ScoreEntry> scores,
-        IReadOnlySet<string> rouletteExclusions)
+        IReadOnlySet<string> rouletteExclusions,
+        string? currentConfigRole,
+        string configRoleSource,
+        string? currentCommandRole,
+        string commandRoleSource)
     {
         var sb = new StringBuilder();
         sb.Append("""
@@ -134,23 +138,34 @@ public static class ConfigUiHtml
         }
         sb.Append("</tbody></table>");
 
-        // ── Ping Role ───────────────────────────────────────────────────────
-        sb.Append("<h2>Ping Role</h2>");
-        sb.Append("<table><thead><tr><th>Current</th><th>Set</th><th></th></tr></thead><tbody><tr><td>");
-        if (currentPingRole != null)
+        // ── Roles ───────────────────────────────────────────────────────────
+        sb.Append("<h2>Roles</h2>");
+        sb.Append("<table><thead><tr><th>Role</th><th>Current</th><th>Set</th><th></th></tr></thead><tbody>");
+
+        void RoleRow(string label, string? current, string source, string setAction, string clearAction)
         {
-            var roleName = roles.FirstOrDefault(r => r.Id == currentPingRole)?.Name;
-            sb.Append($"{(roleName != null ? $"@{Esc(roleName)}" : $"<code>{currentPingRole}</code>")}<span class=\"src\">[{pingRoleSource}]</span>");
+            sb.Append($"<tr><td>{Esc(label)}</td><td>");
+            if (current != null)
+            {
+                var roleName = roles.FirstOrDefault(r => r.Id == current)?.Name;
+                sb.Append($"{(roleName != null ? $"@{Esc(roleName)}" : $"<code>{current}</code>")}<span class=\"src\">[{source}]</span>");
+            }
+            else
+                sb.Append("<span class=\"no-entries\">unset</span>");
+            sb.Append($"""</td><td><form method="post" action="{setAction}" class="f"><select name="role_id" style="width:200px"><option value="">— pick a role —</option>""");
+            foreach (var role in roles.OrderBy(r => r.Name))
+                sb.Append($"<option value=\"{role.Id}\"{(role.Id == current ? " selected" : "")}>@{Esc(role.Name)}</option>");
+            sb.Append("""</select><button type="submit" class="btn">Set</button></form></td><td>""");
+            if (source == "prefs")
+                sb.Append($"""<form method="post" action="{clearAction}"><button type="submit" class="btn-sm">Clear override</button></form>""");
+            sb.Append("</td></tr>");
         }
-        else
-            sb.Append("<span class=\"no-entries\">unset</span>");
-        sb.Append("""</td><td><form method="post" action="/config/ui/setpingrole" class="f"><select name="role_id" style="width:200px"><option value="">— pick a role —</option>""");
-        foreach (var role in roles.OrderBy(r => r.Name))
-            sb.Append($"<option value=\"{role.Id}\"{(role.Id == currentPingRole ? " selected" : "")}>@{Esc(role.Name)}</option>");
-        sb.Append("""</select><button type="submit" class="btn">Set</button></form></td><td>""");
-        if (pingRoleSource == "prefs")
-            sb.Append("""<form method="post" action="/config/ui/clearpingrole"><button type="submit" class="btn-sm">Clear override</button></form>""");
-        sb.Append("</td></tr></tbody></table>");
+
+        RoleRow("PR Ping Role", currentPingRole, pingRoleSource, "/config/ui/setpingrole", "/config/ui/clearpingrole");
+        RoleRow("Config UI Role", currentConfigRole, configRoleSource, "/config/ui/setconfigrole", "/config/ui/clearconfigrole");
+        RoleRow("Command Role", currentCommandRole, commandRoleSource, "/config/ui/setcommandrole", "/config/ui/clearcommandrole");
+
+        sb.Append("</tbody></table>");
 
         // ── Reactions ───────────────────────────────────────────────────────
         sb.Append("<h2>Reactions</h2>");

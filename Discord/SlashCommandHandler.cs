@@ -127,8 +127,9 @@ public class SlashCommandHandler
 
         if (!_noAuth)
         {
-            var roleKey = command.Data.Name == "configui" ? "Roles:Config" : "Roles:Command";
-            var requiredRole = _config[roleKey];
+            var requiredRole = command.Data.Name == "configui"
+                ? _prefs.ResolveConfigRole(_config["Roles:Config"])
+                : _prefs.ResolveCommandRole(_config["Roles:Command"]);
             if (!string.IsNullOrEmpty(requiredRole) && ulong.TryParse(requiredRole, out var roleId))
             {
                 if (command.User is SocketGuildUser guildUser && !guildUser.Roles.Any(r => r.Id == roleId))
