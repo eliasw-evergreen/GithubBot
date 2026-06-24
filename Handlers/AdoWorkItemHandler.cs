@@ -71,25 +71,40 @@ public class AdoWorkItemHandler
         var resource = payload.GetProperty("resource");
         var changedFields = resource.TryGetProperty("fields", out var cf) ? cf : default;
 
-        var interesting = new[] {
-            ("System.State",                          "State"),
-            ("System.AssignedTo",                     "Assigned To"),
-            ("System.Title",                          "Title"),
-            ("System.AreaPath",                       "Area"),
-            ("Microsoft.VSTS.Common.Priority",        "Priority"),
-            ("System.IterationPath",                  "Iteration"),
+        // Fields that are always noise — changed by every event or carry no user-visible info
+        var skipFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "System.Rev", "System.RevisedDate", "System.ChangedDate", "System.Watermark",
+            "System.History", "System.CommentCount",
+            "Microsoft.VSTS.Common.StateChangeDate",
         };
 
-        // Collect only meaningful field changes — skip if nothing interesting changed (e.g. comment-only update)
+        // Friendly names for well-known fields; unknown fields use the last segment of the field name
+        var friendlyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["System.State"]                          = "State",
+            ["System.AssignedTo"]                     = "Assigned To",
+            ["System.Title"]                          = "Title",
+            ["System.AreaPath"]                       = "Area",
+            ["System.IterationPath"]                  = "Iteration",
+            ["Microsoft.VSTS.Common.Priority"]        = "Priority",
+            ["Microsoft.VSTS.Common.Severity"]        = "Severity",
+            ["Microsoft.VSTS.Common.ResolvedReason"]  = "Resolved Reason",
+            ["Microsoft.VSTS.TCM.ReproSteps"]         = "Repro Steps",
+        };
+
         var fieldLines = new List<(string label, string value)>();
         if (changedFields.ValueKind == JsonValueKind.Object)
         {
-            foreach (var (field, label) in interesting)
+            foreach (var prop in changedFields.EnumerateObject())
             {
-                if (!changedFields.TryGetProperty(field, out var change)) continue;
-                var oldVal = change.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
-                var newVal = change.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
+                if (skipFields.Contains(prop.Name)) continue;
+                var oldVal = prop.Value.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
+                var newVal = prop.Value.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
                 if (string.IsNullOrEmpty(newVal) || oldVal == newVal) continue;
+                var label = friendlyNames.TryGetValue(prop.Name, out var fn)
+                    ? fn
+                    : prop.Name.Contains('.') ? prop.Name[(prop.Name.LastIndexOf('.') + 1)..] : prop.Name;
                 fieldLines.Add((label, oldVal != null ? $"{oldVal} → **{newVal}**" : $"**{newVal}**"));
             }
         }
