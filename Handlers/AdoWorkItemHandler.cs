@@ -275,6 +275,9 @@ public class AdoWorkItemHandler
         {
             var d = _userMap.AdoToDiscord(commenterEmail);
             _logger.LogInformation("[ADO] Comment by email={Email} resolved={Resolved}", commenterEmail, d ?? "null");
+            // Register display name so @mention lookups work
+            if (fields.ValueKind == JsonValueKind.Object && fields.TryGetProperty("System.ChangedBy", out var changedByEl))
+                TryRegisterIdentityString(changedByEl);
             embed.AddField("By", d != null ? $"<@{d}>" : commenterEmail, inline: true);
         }
 
@@ -282,8 +285,8 @@ public class AdoWorkItemHandler
             _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
 
         // Ping anyone @mentioned in the comment
-        var mentionedPings = ExtractMentionGuids(commentText)
-            .Select(g => _userMap.AdoGuidToDiscord(g))
+        var mentionedPings = ExtractMentionNames(commentText)
+            .Select(name => _userMap.AdoDisplayNameToDiscord(name))
             .Where(d => d != null)
             .Distinct()
             .Select(d => $"<@{d}>")
@@ -471,9 +474,9 @@ public class AdoWorkItemHandler
         var assignedEmail  = Email(fields, "System.AssignedTo");
         var (color, _)     = TypeEmoji(Str(fields, "System.WorkItemType"));
 
-        // Register GUID mappings for all identity fields we encounter
+        // Register display name → Discord mappings for all identity fields we encounter
         foreach (var key in new[] { "System.AssignedTo", "System.CreatedBy", "System.ChangedBy" })
-            if (fields.TryGetProperty(key, out var idField)) TryRegisterGuid(idField);
+            if (fields.TryGetProperty(key, out var idField)) TryRegisterIdentityString(idField);
 
         wi = new WorkItemInfo(
             Id:               id,
@@ -575,28 +578,23 @@ public class AdoWorkItemHandler
         return null;
     }
 
-    // Extract ADO user GUIDs from mention HTML: data-vss-mention="version:2.0,{guid}"
-    private static IEnumerable<string> ExtractMentionGuids(string? html)
+    // Extract display names from ADO mention HTML: >@Display Name<
+    private static IEnumerable<string> ExtractMentionNames(string? html)
     {
         if (string.IsNullOrEmpty(html)) yield break;
-        foreach (Match m in Regex.Matches(html, @"data-vss-mention=""version:[\d.]+,([0-9a-f\-]{36})""", RegexOptions.IgnoreCase))
+        foreach (Match m in Regex.Matches(html, @"data-vss-mention=""[^""]+""[^>]*>@([^<]+)<", RegexOptions.IgnoreCase))
             yield return m.Groups[1].Value.Trim();
     }
 
     // Register GUID→Discord mapping from an identity JsonElement (has both "id" and "uniqueName")
-    private void TryRegisterGuid(JsonElement identityEl)
+    // Parse "Display Name <email>" strings and register the display name → Discord mapping
+    private void TryRegisterIdentityString(JsonElement el)
     {
-        _logger.LogInformation("[ADO] TryRegisterGuid kind={Kind} raw={Raw}", identityEl.ValueKind, identityEl.GetRawText()[..Math.Min(200, identityEl.GetRawText().Length)]);
-        if (identityEl.ValueKind != JsonValueKind.Object) return;
-        if (!identityEl.TryGetProperty("id", out var guidEl)) return;
-        var guid = guidEl.GetString();
-        if (string.IsNullOrEmpty(guid)) return;
-        var email = identityEl.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
-        if (string.IsNullOrEmpty(email)) return;
-        var discordId = _userMap.AdoToDiscord(email);
-        _logger.LogInformation("[ADO] RegisterGuid guid={Guid} email={Email} discord={Discord}", guid, email, discordId ?? "null");
-        if (discordId != null)
-            _userMap.RegisterAdoGuid(guid, discordId);
+        if (el.ValueKind != JsonValueKind.String) return;
+        var s = el.GetString() ?? "";
+        var match = Regex.Match(s, @"^(.+?)\s*<([^>]+)>$");
+        if (!match.Success) return;
+        _userMap.RegisterAdoDisplayName(match.Groups[1].Value, match.Groups[2].Value);
     }
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch

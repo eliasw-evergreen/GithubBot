@@ -64,28 +64,18 @@ public class UserMapService
         return null;
     }
 
-    public string? AdoGuidToDiscord(string guid)
+    // In-memory display name → Discord ID cache built from seen "Name <email>" strings
+    private readonly Dictionary<string, string> _displayNameCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public void RegisterAdoDisplayName(string displayName, string email)
     {
-        var key = $"ado-guid:{guid.ToLowerInvariant()}";
-        var map = Load();
-        foreach (var (discordId, entries) in map)
-        {
-            if (entries.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)))
-                return discordId;
-        }
-        return null;
+        var discordId = AdoToDiscord(email);
+        if (discordId != null)
+            _displayNameCache[displayName.Trim()] = discordId;
     }
 
-    // Auto-register an ADO GUID→Discord mapping derived from an already-resolved email
-    public void RegisterAdoGuid(string guid, string discordId)
-    {
-        var key = $"ado-guid:{guid.ToLowerInvariant()}";
-        var map = Load();
-        if (!map.TryGetValue(discordId, out var entries)) return; // only for already-mapped users
-        if (entries.Contains(key)) return;
-        entries.Add(key);
-        Save(map);
-    }
+    public string? AdoDisplayNameToDiscord(string displayName)
+        => _displayNameCache.TryGetValue(displayName.Trim(), out var id) ? id : null;
 
     // Encode a raw value (email or GitHub username) into its storage form
     public static string Encode(string value)
