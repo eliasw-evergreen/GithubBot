@@ -262,9 +262,7 @@ public class SlashCommandHandler
             .WithTitle("PR Roulette 🎰")
             .WithColor(new Color(0xe91e63))
             .WithDescription(
-                $"{pings}\n\n" +
-                $"You {plural} been selected{roleNote} to review **{prLabel}**!\n" +
-                $"Comment or submit a review to earn **bonus points** on top of your regular score.")
+                $"{pings}\n\nYou {plural} been selected{roleNote} to review **{prLabel}**!")
             .WithCurrentTimestamp()
             .Build();
 
