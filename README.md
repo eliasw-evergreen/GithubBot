@@ -47,7 +47,7 @@ The bot runs an ASP.NET minimal API server alongside a Discord.Net client. GitHu
 Enable **Developer Mode** in Discord (User Settings → Advanced → Developer Mode), then:
 
 - **Server ID (`DISCORD_GUILD_ID`)** — right-click your server name → Copy Server ID
-- **Channel ID (`DISCORD_CHANNEL_ID`)** — right-click the channel you want PR notifications in → Copy Channel ID
+- **Channel ID (`DISCORD_PULL_CHANNEL_ID`)** — right-click the channel you want PR notifications in → Copy Channel ID
 
 ### 3. Deploy the bot on your VPS
 
@@ -143,7 +143,7 @@ Copy `.env.example` to `.env` and fill in all values:
 | `DISCORD_BOT_TOKEN` | Yes | Bot token from the Discord Developer Portal |
 | `DISCORD_CLIENT_ID` | Yes | Application ID from the Discord Developer Portal |
 | `DISCORD_GUILD_ID` | Yes | ID of the Discord server the bot is in |
-| `DISCORD_CHANNEL_ID` | Yes | ID of the channel to post PR notifications in |
+| `DISCORD_PULL_CHANNEL_ID` | Yes | ID of the channel to post PR notifications in |
 | `GITHUB_WEBHOOK_SECRET` | Yes | Secret you set when creating the GitHub webhook |
 | `PORT` | No | Port for the webhook server (default: `3000`) |
 | `PR_PING_ROLE` | No | Discord role ID to ping when a new PR is opened |
