@@ -559,9 +559,9 @@ public class AdoWorkItemHandler
         _userMap.RegisterAdoDisplayName(match.Groups[1].Value, match.Groups[2].Value);
     }
 
-    private static string StripHtml(string s)
+    private static string StripHtml(string? s)
     {
-        if (string.IsNullOrEmpty(s)) return s;
+        if (string.IsNullOrEmpty(s)) return "";
         // Block elements → newlines before stripping
         s = Regex.Replace(s, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
         s = Regex.Replace(s, @"</p>|</li>|</h\d>", "\n", RegexOptions.IgnoreCase);
