@@ -61,7 +61,7 @@ public class SlashCommandHandler
         }
 
         if (forceRegister)
-            _logger.LogInformation("Force-registering slash commands (--force-register-commands)");
+            _logger.LogInformation("Force-registering slash commands (--ForceRegisterCommands)");
 
         _logger.LogInformation("Registering slash commands (stored={Stored}, current={Current})",
             _prefs.GetCommandsVersion() ?? "none", CommandsVersion);
