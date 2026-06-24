@@ -105,8 +105,8 @@ public class AdoWorkItemHandler
             foreach (var prop in changedFields.EnumerateObject())
             {
                 if (skipFields.Contains(prop.Name)) continue;
-                var oldVal = prop.Value.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
-                var newVal = prop.Value.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
+                var oldVal = prop.Value.TryGetProperty("oldValue", out var ov) ? StripHtml(FormatFieldValue(ov)) : null;
+                var newVal = prop.Value.TryGetProperty("newValue", out var nv) ? StripHtml(FormatFieldValue(nv)) : null;
                 if (string.IsNullOrEmpty(newVal) || oldVal == newVal) continue;
                 var label = friendlyNames.TryGetValue(prop.Name, out var fn)
                     ? fn
@@ -178,11 +178,13 @@ public class AdoWorkItemHandler
             changedFields.EnumerateObject().Any(p => embedFields.Contains(p.Name));
 
         var stored = _workItemMap.Get(wi.Id);
+        _logger.LogInformation("[ADO] Update in-place check: hasEmbedChanges={HasEmbed} stored={Stored}", hasEmbedChanges, stored?.MessageId.ToString() ?? "null");
         if (hasEmbedChanges && stored != null)
         {
             // wi has the full current state from resource.revision.fields — rebuild the embed from it
             var updatedEmbed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
             AddStandardFields(updatedEmbed, wi, showDescription: true);
+            _logger.LogInformation("[ADO] Editing message {MsgId} in channel {ChannelId}", stored.MessageId, channelId);
             await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
 
             if (wi.Title != null && wi.Title != stored.Title)
@@ -551,6 +553,9 @@ public class AdoWorkItemHandler
         if (!match.Success) return;
         _userMap.RegisterAdoDisplayName(match.Groups[1].Value, match.Groups[2].Value);
     }
+
+    private static string StripHtml(string s) =>
+        string.IsNullOrEmpty(s) ? s : Regex.Replace(s, "<[^>]+>", "").Trim();
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch
     {
