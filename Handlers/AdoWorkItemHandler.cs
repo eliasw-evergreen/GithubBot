@@ -41,12 +41,16 @@ public class AdoWorkItemHandler
         var embed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
         AddStandardFields(embed, wi, showDescription: true);
 
-        string? ping = wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : null;
-
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
         string? creatorDiscordId = !string.IsNullOrEmpty(wi.CreatedByEmail) ? _userMap.AdoToDiscord(wi.CreatedByEmail) : null;
         if (creatorDiscordId != null)
             _scores.Award(creatorDiscordId, ScoreCategory.TicketCreated);
+
+        var pings = new List<string>();
+        if (creatorDiscordId != null) pings.Add($"<@{creatorDiscordId}>");
+        if (wi.AssignedToDiscord != null && wi.AssignedToDiscord != creatorDiscordId) pings.Add($"<@{wi.AssignedToDiscord}>");
+        string? ping = pings.Count > 0 ? string.Join(" ", pings) : null;
+
         var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
         if (msg != null)
         {
@@ -59,8 +63,6 @@ public class AdoWorkItemHandler
                 Title     = wi.Title,
                 WorkItemType = wi.WorkItemType,
             });
-            if (creatorDiscordId != null && threadId != 0)
-                await _discord.SendMessageAsync(threadId, $"<@{creatorDiscordId}> created this ticket.", null, ct);
         }
     }
 
