@@ -258,6 +258,143 @@ public static class ConfigUiHtml
               else if (type === 'leave') others.delete(name);
               updateBanner();
             };
+
+            // ── Ajax form interception ──────────────────────────────────────
+            function flash(btn, ok) {
+              const orig = btn.textContent, origBg = btn.style.background;
+              btn.textContent = ok ? '✓' : '!';
+              btn.style.background = ok ? '#166534' : '#7f1d1d';
+              btn.disabled = true;
+              setTimeout(() => { btn.textContent = orig; btn.style.background = origBg; btn.disabled = false; }, 1400);
+            }
+
+            document.addEventListener('submit', async e => {
+              const form = e.target.closest('form');
+              if (!form || form.method.toLowerCase() !== 'post') return;
+              e.preventDefault();
+              const btn = form.querySelector('button[type="submit"]') ?? form.querySelector('button');
+              const fd = new FormData(form);
+              try {
+                const res = await fetch(form.action, { method: 'POST', body: fd });
+                if (!res.ok) { flash(btn, false); return; }
+                flash(btn, true);
+                afterSubmit(form, fd);
+              } catch { flash(btn, false); }
+            });
+
+            function afterSubmit(form, fd) {
+              const action = form.action.replace(location.origin, '');
+
+              // Remove a user mapping tag
+              if (action === '/config/ui/remove') {
+                const tag = form.previousElementSibling;
+                if (tag?.classList.contains('tag')) tag.remove();
+                form.remove();
+                return;
+              }
+
+              // Toggle roulette exclusion
+              if (action === '/config/ui/setrouletteexclusion') {
+                const nowExcluded = fd.get('excluded') === '1';
+                const btn = form.querySelector('button');
+                btn.textContent = nowExcluded ? 'Excluded' : 'Include';
+                btn.className = nowExcluded ? 'btn-red' : 'btn-sm';
+                form.querySelector('input[name="excluded"]').value = nowExcluded ? '0' : '1';
+                return;
+              }
+
+              // Set reaction — update the display cell in the same row
+              if (action === '/config/ui/setreaction') {
+                const emoji = fd.get('emoji')?.trim();
+                if (!emoji) return;
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell) cell.innerHTML = `<span class="reaction-val">${emoji}</span><span class="src">[prefs]</span>`;
+                // Show the clear button if hidden
+                const clearCell = row?.querySelector('td:last-child');
+                if (clearCell && !clearCell.querySelector('button'))
+                  clearCell.innerHTML = `<form method="post" action="/config/ui/clearreaction"><input type="hidden" name="event" value="${fd.get('event')}"><button type="submit" class="btn-sm">Clear</button></form>`;
+                return;
+              }
+
+              // Clear reaction
+              if (action === '/config/ui/clearreaction') {
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell) cell.innerHTML = `<span class="no-entries">unset</span><span class="src">[unset]</span>`;
+                form.closest('td').innerHTML = '';
+                return;
+              }
+
+              // Set a role row (pingrole / configrole / commandrole)
+              if (['/config/ui/setpingrole','/config/ui/setconfigrole','/config/ui/setcommandrole'].includes(action)) {
+                const sel = form.querySelector('select[name="role_id"]');
+                const roleId = sel?.value;
+                const roleName = sel?.options[sel.selectedIndex]?.text;
+                if (!roleId) return;
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell) cell.innerHTML = `${roleName}<span class="src">[prefs]</span>`;
+                const clearCell = row?.querySelector('td:last-child');
+                const clearActions = { '/config/ui/setpingrole': '/config/ui/clearpingrole', '/config/ui/setconfigrole': '/config/ui/clearconfigrole', '/config/ui/setcommandrole': '/config/ui/clearcommandrole' };
+                if (clearCell && !clearCell.querySelector('button'))
+                  clearCell.innerHTML = `<form method="post" action="${clearActions[action]}"><button type="submit" class="btn-sm">Clear override</button></form>`;
+                return;
+              }
+
+              // Clear a role row
+              if (['/config/ui/clearpingrole','/config/ui/clearconfigrole','/config/ui/clearcommandrole'].includes(action)) {
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell) cell.innerHTML = `<span class="no-entries">unset</span>`;
+                form.closest('td').innerHTML = '';
+                return;
+              }
+
+              // Set channel
+              if (action === '/config/ui/setchannel') {
+                const sel = form.querySelector('select[name="channel_id"]');
+                const name = sel?.options[sel.selectedIndex]?.text?.replace(/^# /, '');
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell && name) cell.innerHTML = `#${name}<span class="src">[prefs]</span>`;
+                const clearCell = row?.querySelector('td:last-child');
+                const key = fd.get('key');
+                if (clearCell && !clearCell.querySelector('button'))
+                  clearCell.innerHTML = `<form method="post" action="/config/ui/clearchannel"><input type="hidden" name="key" value="${key}"><button type="submit" class="btn-sm">Clear override</button></form>`;
+                return;
+              }
+
+              // Clear channel
+              if (action === '/config/ui/clearchannel') {
+                const row = form.closest('tr');
+                const cell = row?.querySelector('td:nth-child(2)');
+                if (cell) cell.innerHTML = `<span class="no-entries">unset</span>`;
+                form.closest('td').innerHTML = '';
+                return;
+              }
+
+              // Save score — update total cell
+              if (action === '/config/ui/setscore') {
+                const row = form.closest('tr') ?? form.closest('tr');
+                // sum the inputs
+                const vals = ['pr_opened','pr_merged','review','comments','bonus']
+                  .map(n => parseInt(form.querySelector(`input[name="${n}"]`)?.value ?? '0') || 0);
+                const total = vals.reduce((a,b) => a+b, 0);
+                const totalCell = row?.querySelector('td:nth-child(6)');
+                if (totalCell) totalCell.innerHTML = `<strong>${total}</strong>`;
+                return;
+              }
+
+              // Reset score — zero out all inputs and total
+              if (action === '/config/ui/resetscore') {
+                const row = form.closest('tr');
+                row?.querySelectorAll('input[type="number"]').forEach(i => i.value = '0');
+                const totalCell = row?.querySelector('td:nth-child(6)');
+                if (totalCell) totalCell.innerHTML = '<strong>0</strong>';
+                return;
+              }
+            }
             </script>
             </body></html>
             """);
