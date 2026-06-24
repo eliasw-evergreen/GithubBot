@@ -45,7 +45,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v8";
+    private const string CommandsVersion = "v9";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -109,6 +109,16 @@ public class SlashCommandHandler
                     .WithDescription("Delete one or more bot messages by ID")
                     .AddOption("message_ids", ApplicationCommandOptionType.String, "Space or comma-separated message IDs", isRequired: true)
                     .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("map-user")
+                    .WithDescription("Map a Discord user to a GitHub or DevOps identity")
+                    .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email/display name", isRequired: true)
+                    .AddOption("platform", ApplicationCommandOptionType.String, "Platform to map to", isRequired: true,
+                        choices: [new ApplicationCommandOptionChoiceProperties { Name = "GitHub", Value = "gh" },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "DevOps", Value = "ado" }])
+                    .AddOption("user", ApplicationCommandOptionType.User, "Discord user to map (defaults to yourself)", isRequired: false)
+                    .Build(),
             };
 
             await rest.BulkOverwriteGuildCommands(commands, guildId,
@@ -169,6 +179,9 @@ public class SlashCommandHandler
                 break;
             case "botdelete":
                 await HandleBotDelete(command);
+                break;
+            case "map-user":
+                await HandleMapUser(command);
                 break;
         }
     }
@@ -323,6 +336,38 @@ public class SlashCommandHandler
         if (skipped > 0) reply += $" {skipped} ID{(skipped == 1 ? "" : "s")} skipped (not found, not mine, or invalid).";
 
         await command.FollowupAsync(reply, ephemeral: true);
+    }
+
+    private async Task HandleMapUser(SocketSlashCommand command)
+    {
+        var username = command.Data.Options.FirstOrDefault(o => o.Name == "username")?.Value as string ?? "";
+        var platform = command.Data.Options.FirstOrDefault(o => o.Name == "platform")?.Value as string ?? "gh";
+        var targetUser = command.Data.Options.FirstOrDefault(o => o.Name == "user")?.Value as SocketUser ?? command.User;
+
+        username = username.Trim();
+        if (string.IsNullOrEmpty(username))
+        {
+            await command.RespondAsync("Username cannot be empty.", ephemeral: true);
+            return;
+        }
+
+        var discordId = targetUser.Id.ToString();
+        var map = _userMap.GetAll();
+        if (!map.TryGetValue(discordId, out var entry)) entry = new();
+
+        var list = platform == "ado" ? entry.Ado : entry.Gh;
+        if (list.Any(n => n.Equals(username, StringComparison.OrdinalIgnoreCase)))
+        {
+            await command.RespondAsync($"<@{discordId}> is already mapped to `{username}` on {(platform == "ado" ? "DevOps" : "GitHub")}.", ephemeral: true);
+            return;
+        }
+
+        list.Add(username);
+        map[discordId] = entry;
+        _userMap.Save(map);
+
+        var platformLabel = platform == "ado" ? "DevOps" : "GitHub";
+        await command.RespondAsync($"Mapped <@{discordId}> → `{username}` ({platformLabel}).", ephemeral: true);
     }
 
     private async Task HandleScore(SocketSlashCommand command)
