@@ -281,10 +281,9 @@ public class AdoWorkItemHandler
         if (!string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
             _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
 
-        _logger.LogInformation("[ADO] Comment HTML: {Html}", commentText);
         // Ping anyone @mentioned in the comment
-        var mentionedPings = ExtractMentionEmails(commentText)
-            .Select(e => _userMap.AdoToDiscord(e))
+        var mentionedPings = ExtractMentionGuids(commentText)
+            .Select(g => _userMap.AdoGuidToDiscord(g))
             .Where(d => d != null)
             .Distinct()
             .Select(d => $"<@{d}>")
@@ -472,6 +471,10 @@ public class AdoWorkItemHandler
         var assignedEmail  = Email(fields, "System.AssignedTo");
         var (color, _)     = TypeEmoji(Str(fields, "System.WorkItemType"));
 
+        // Register GUID mappings for all identity fields we encounter
+        foreach (var key in new[] { "System.AssignedTo", "System.CreatedBy", "System.ChangedBy" })
+            if (fields.TryGetProperty(key, out var idField)) TryRegisterGuid(idField);
+
         wi = new WorkItemInfo(
             Id:               id,
             Title:            Str(fields, "System.Title"),
@@ -572,13 +575,26 @@ public class AdoWorkItemHandler
         return null;
     }
 
-    // Extract emails of @mentioned users from ADO comment HTML
-    // ADO renders mentions as <a href="mailto:email" data-vss-mention="...">@Name</a>
-    private static IEnumerable<string> ExtractMentionEmails(string? html)
+    // Extract ADO user GUIDs from mention HTML: data-vss-mention="version:2.0,{guid}"
+    private static IEnumerable<string> ExtractMentionGuids(string? html)
     {
         if (string.IsNullOrEmpty(html)) yield break;
-        foreach (Match m in Regex.Matches(html, @"href=""mailto:([^""]+)""[^>]*data-vss-mention", RegexOptions.IgnoreCase))
+        foreach (Match m in Regex.Matches(html, @"data-vss-mention=""version:[\d.]+,([0-9a-f\-]{36})""", RegexOptions.IgnoreCase))
             yield return m.Groups[1].Value.Trim();
+    }
+
+    // Register GUID→Discord mapping from an identity JsonElement (has both "id" and "uniqueName")
+    private void TryRegisterGuid(JsonElement identityEl)
+    {
+        if (identityEl.ValueKind != JsonValueKind.Object) return;
+        if (!identityEl.TryGetProperty("id", out var guidEl)) return;
+        var guid = guidEl.GetString();
+        if (string.IsNullOrEmpty(guid)) return;
+        var email = identityEl.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
+        if (string.IsNullOrEmpty(email)) return;
+        var discordId = _userMap.AdoToDiscord(email);
+        if (discordId != null)
+            _userMap.RegisterAdoGuid(guid, discordId);
     }
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch

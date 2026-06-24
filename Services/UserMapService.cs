@@ -64,6 +64,29 @@ public class UserMapService
         return null;
     }
 
+    public string? AdoGuidToDiscord(string guid)
+    {
+        var key = $"ado-guid:{guid.ToLowerInvariant()}";
+        var map = Load();
+        foreach (var (discordId, entries) in map)
+        {
+            if (entries.Any(n => n.Equals(key, StringComparison.OrdinalIgnoreCase)))
+                return discordId;
+        }
+        return null;
+    }
+
+    // Auto-register an ADO GUID→Discord mapping derived from an already-resolved email
+    public void RegisterAdoGuid(string guid, string discordId)
+    {
+        var key = $"ado-guid:{guid.ToLowerInvariant()}";
+        var map = Load();
+        if (!map.TryGetValue(discordId, out var entries)) return; // only for already-mapped users
+        if (entries.Contains(key)) return;
+        entries.Add(key);
+        Save(map);
+    }
+
     // Encode a raw value (email or GitHub username) into its storage form
     public static string Encode(string value)
         => value.Contains('@') ? $"ado:{value.ToLowerInvariant()}" : value;
