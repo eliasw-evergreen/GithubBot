@@ -66,31 +66,42 @@ public class AdoWorkItemHandler
         var resource = payload.GetProperty("resource");
         var changedFields = resource.TryGetProperty("fields", out var cf) ? cf : default;
 
-        var embed = new EmbedBuilder()
-            .WithTitle($"✏️ {TypeEmoji(wi.WorkItemType).emoji} #{wi.Id} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
-            .WithColor(new Color(0x5865F2))
-            .WithUrl(wi.Url);
+        var interesting = new[] {
+            ("System.State",                          "State"),
+            ("System.AssignedTo",                     "Assigned To"),
+            ("System.Title",                          "Title"),
+            ("System.AreaPath",                       "Area"),
+            ("Microsoft.VSTS.Common.Priority",        "Priority"),
+            ("System.IterationPath",                  "Iteration"),
+        };
 
-        // Show what changed
+        // Collect only meaningful field changes — skip if nothing interesting changed (e.g. comment-only update)
+        var fieldLines = new List<(string label, string value)>();
         if (changedFields.ValueKind == JsonValueKind.Object)
         {
-            var interesting = new[] {
-                ("System.State",                          "State"),
-                ("System.AssignedTo",                     "Assigned To"),
-                ("System.Title",                          "Title"),
-                ("System.AreaPath",                       "Area"),
-                ("Microsoft.VSTS.Common.Priority",        "Priority"),
-                ("System.IterationPath",                  "Iteration"),
-            };
             foreach (var (field, label) in interesting)
             {
                 if (!changedFields.TryGetProperty(field, out var change)) continue;
                 var oldVal = change.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
                 var newVal = change.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
                 if (string.IsNullOrEmpty(newVal) || oldVal == newVal) continue;
-                embed.AddField(label, oldVal != null ? $"{oldVal} → **{newVal}**" : $"**{newVal}**", inline: true);
+                fieldLines.Add((label, oldVal != null ? $"{oldVal} → **{newVal}**" : $"**{newVal}**"));
             }
         }
+
+        if (fieldLines.Count == 0)
+        {
+            _logger.LogInformation("[ADO] Work item updated #{Id} — no interesting fields changed, skipping", wi.Id);
+            return;
+        }
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"✏️ {TypeEmoji(wi.WorkItemType).emoji} #{wi.Id} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithColor(new Color(0x5865F2))
+            .WithUrl(wi.Url);
+
+        foreach (var (label, value) in fieldLines)
+            embed.AddField(label, value, inline: true);
 
         if (!string.IsNullOrWhiteSpace(wi.ChangedByEmail))
         {
@@ -98,7 +109,6 @@ public class AdoWorkItemHandler
             embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
         }
 
-        // Only ping if assignment changed
         string? ping = null;
         if (changedFields.ValueKind == JsonValueKind.Object &&
             changedFields.TryGetProperty("System.AssignedTo", out _) &&
