@@ -119,7 +119,9 @@ public class AdoWorkItemHandler
         var resource = payload.TryGetProperty("resource", out var r) ? r : default;
         if (resource.ValueKind == JsonValueKind.Undefined) return;
 
-        var workItemId = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() : 0;
+        var workItemId = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() :
+                         resource.TryGetProperty("revision", out var revForId) &&
+                         revForId.TryGetProperty("id", out var revId) ? revId.GetInt32() : 0;
         var commentText = resource.TryGetProperty("text", out var txt) ? txt.GetString() : null;
 
         string? commenterEmail = null;
@@ -273,8 +275,8 @@ public class AdoWorkItemHandler
             fields = rf;
         if (fields.ValueKind == JsonValueKind.Undefined) return false;
 
-        var id = resource.TryGetProperty("id", out var idEl) ? idEl.GetInt32() :
-                 resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() : 0;
+        var id = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() :
+                 resource.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0;
 
         var assignedEmail  = Email(fields, "System.AssignedTo");
         var (color, _)     = TypeEmoji(Str(fields, "System.WorkItemType"));
