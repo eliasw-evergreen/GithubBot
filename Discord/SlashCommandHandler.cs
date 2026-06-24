@@ -456,9 +456,10 @@ public class SlashCommandHandler
             foreach (var (entry, i) in board.Select((e, i) => (e, i)))
             {
                 var prefix = i < medals.Length ? medals[i] : $"#{i + 1}";
-                var breakdown = $"PRs: {entry.Entry.PrOpened / ScoreService.PointsPrOpened} opened · {entry.Entry.PrMerged / ScoreService.PointsPrMerged} merged\n" +
-                                $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}";
-                embed.AddField($"{prefix} <@{entry.DiscordId}> — {entry.Entry.Total} pts", breakdown);
+                var value = $"<@{entry.DiscordId}> — **{entry.Entry.Total} pts**\n" +
+                            $"PRs: {entry.Entry.PrOpened / ScoreService.PointsPrOpened} opened · {entry.Entry.PrMerged / ScoreService.PointsPrMerged} merged\n" +
+                            $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}";
+                embed.AddField(prefix, value);
             }
 
             await command.RespondAsync(ephemeral: true, embeds: [embed.Build()]);
