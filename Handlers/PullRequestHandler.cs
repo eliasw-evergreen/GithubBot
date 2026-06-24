@@ -237,7 +237,7 @@ public class PullRequestHandler : IGitHubEventHandler
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         var content = string.Join(' ', pings);
         await _discord.SendMessageAsync(target.Id, string.IsNullOrEmpty(content) ? null : content, embed, ct);
     }
@@ -255,7 +255,7 @@ public class PullRequestHandler : IGitHubEventHandler
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         await _discord.SendMessageAsync(target.Id, content, embed, ct);
     }
 

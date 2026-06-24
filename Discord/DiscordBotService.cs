@@ -116,8 +116,29 @@ public class DiscordBotService : IHostedService
         // Happy path — already tracked with a thread
         if (stored?.ThreadId is ulong existingThread && existingThread != 0)
         {
+            // Gateway cache first (fast)
             var t = _client.GetChannel(existingThread) as IMessageChannel;
             if (t != null) return t;
+
+            // Archived threads aren't in the gateway cache — try REST
+            try
+            {
+                var restThread = await _client.Rest.GetChannelAsync(existingThread) as global::Discord.Rest.RestThreadChannel;
+                if (restThread != null)
+                {
+                    // Unarchive so the bot can post in it
+                    if (restThread.IsArchived)
+                        await restThread.ModifyAsync(p => p.Archived = false);
+                    // Re-fetch from cache after unarchive
+                    var unarchived = _client.GetChannel(existingThread) as IMessageChannel;
+                    if (unarchived != null) return unarchived;
+                    return restThread;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[PrResolve] Thread {ThreadId} not accessible via REST, falling back to search", existingThread);
+            }
         }
 
         if (channel is not ITextChannel textChannel)
