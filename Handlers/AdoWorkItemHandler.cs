@@ -562,8 +562,14 @@ public class AdoWorkItemHandler
     private static string StripHtml(string s)
     {
         if (string.IsNullOrEmpty(s)) return s;
+        // Block elements → newlines before stripping
+        s = Regex.Replace(s, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"</p>|</li>|</h\d>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"<li\s*/?>", "• ", RegexOptions.IgnoreCase);
         s = Regex.Replace(s, "<[^>]+>", "");
         s = System.Net.WebUtility.HtmlDecode(s);
+        // Collapse 3+ newlines to 2
+        s = Regex.Replace(s, @"\n{3,}", "\n\n");
         return s.Trim();
     }
 
