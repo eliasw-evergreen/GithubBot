@@ -42,6 +42,12 @@ public class AdoWorkItemHandler
         AddStandardFields(embed, wi, showDescription: true);
 
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
+        if (wi.WorkItemType == "Bug")
+        {
+            var resource = payload.GetProperty("resource");
+            if (resource.TryGetProperty("revision", out var rev) && rev.TryGetProperty("fields", out var allF))
+                _logger.LogInformation("[ADO] Bug fields: {Fields}", string.Join(", ", allF.EnumerateObject().Select(p => p.Name)));
+        }
         string? creatorDiscordId = !string.IsNullOrEmpty(wi.CreatedByEmail) ? _userMap.AdoToDiscord(wi.CreatedByEmail) : null;
         if (creatorDiscordId != null)
             _scores.Award(creatorDiscordId, ScoreCategory.TicketCreated);
