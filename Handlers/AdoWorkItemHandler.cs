@@ -75,8 +75,9 @@ public class AdoWorkItemHandler
         var skipFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "System.Rev", "System.RevisedDate", "System.ChangedDate", "System.Watermark",
-            "System.History", "System.CommentCount",
-            "Microsoft.VSTS.Common.StateChangeDate",
+            "System.History", "System.CommentCount", "System.AuthorizedDate", "System.AuthorizedAs",
+            "System.PersonId",
+            "Microsoft.VSTS.Common.StateChangeDate", "Microsoft.VSTS.Common.AuthorizedDate",
         };
 
         // Friendly names for well-known fields; unknown fields use the last segment of the field name
