@@ -44,8 +44,9 @@ public class AdoWorkItemHandler
         string? ping = wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : null;
 
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
-        if (!string.IsNullOrEmpty(wi.CreatedByEmail) && _userMap.AdoToDiscord(wi.CreatedByEmail) is string creatorId)
-            _scores.Award(creatorId, ScoreCategory.TicketCreated);
+        string? creatorDiscordId = !string.IsNullOrEmpty(wi.CreatedByEmail) ? _userMap.AdoToDiscord(wi.CreatedByEmail) : null;
+        if (creatorDiscordId != null)
+            _scores.Award(creatorDiscordId, ScoreCategory.TicketCreated);
         var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
         if (msg != null)
         {
@@ -58,6 +59,8 @@ public class AdoWorkItemHandler
                 Title     = wi.Title,
                 WorkItemType = wi.WorkItemType,
             });
+            if (creatorDiscordId != null && threadId != 0)
+                await _discord.SendMessageAsync(threadId, $"<@{creatorDiscordId}> created this ticket.", null, ct);
         }
     }
 
