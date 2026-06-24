@@ -45,7 +45,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v7";
+    private const string CommandsVersion = "v8";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -84,14 +84,11 @@ public class SlashCommandHandler
                 new SlashCommandBuilder()
                     .WithName("leaderboard")
                     .WithDescription("Show the top scorers")
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("top")
-                        .WithType(ApplicationCommandOptionType.SubCommand)
-                        .WithDescription("Show top scorers (compact view)"))
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("verbose")
-                        .WithType(ApplicationCommandOptionType.SubCommand)
-                        .WithDescription("Show per-category breakdown for each user"))
+                    .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("leaderboard-verbose")
+                    .WithDescription("Show leaderboard with per-category score breakdown")
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -159,7 +156,10 @@ public class SlashCommandHandler
                 await HandleScore(command);
                 break;
             case "leaderboard":
-                await HandleLeaderboard(command);
+                await HandleLeaderboard(command, verbose: false);
+                break;
+            case "leaderboard-verbose":
+                await HandleLeaderboard(command, verbose: true);
                 break;
             case "configui":
                 await HandleConfigUi(command);
@@ -358,9 +358,8 @@ public class SlashCommandHandler
             .Build()]);
     }
 
-    private async Task HandleLeaderboard(SocketSlashCommand command)
+    private async Task HandleLeaderboard(SocketSlashCommand command, bool verbose = false)
     {
-        var verbose = command.Data.Options.FirstOrDefault()?.Name == "verbose";
         var board = _scores.GetLeaderboard().Take(10).ToList();
 
         if (board.Count == 0)
