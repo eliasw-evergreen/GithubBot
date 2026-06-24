@@ -280,13 +280,22 @@ public class AdoWorkItemHandler
 
         if (!string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
             _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
+
+        // Ping anyone @mentioned in the comment
+        var mentionedPings = ExtractMentionEmails(commentText)
+            .Select(e => _userMap.AdoToDiscord(e))
+            .Where(d => d != null)
+            .Distinct()
+            .Select(d => $"<@{d}>")
+            .ToList();
+        var mentionContent = mentionedPings.Count > 0 ? string.Join(" ", mentionedPings) : null;
+
         _logger.LogInformation("[ADO] Work item commented #{Id}", workItemId);
 
-        // Use a minimal WorkItemInfo for thread resolution
         var wi = new WorkItemInfo(workItemId, title, workItemType, null, null, null, null, null, null, null,
             BuildWorkItemUrl(payload, workItemId), Color.Default);
         var target = await ResolveThreadAsync(channelId, wi, ct);
-        await _discord.SendMessageAsync(target, null, embed.Build(), ct);
+        await _discord.SendMessageAsync(target, mentionContent, embed.Build(), ct);
     }
 
     // ── workitem.deleted ────────────────────────────────────────────────────
@@ -448,11 +457,12 @@ public class AdoWorkItemHandler
         if (resource.ValueKind == JsonValueKind.Undefined) return false;
 
         JsonElement fields = default;
-        if (resource.TryGetProperty("fields", out var f) && f.ValueKind == JsonValueKind.Object)
-            fields = f;
-        else if (resource.TryGetProperty("revision", out var rev) &&
-                 rev.TryGetProperty("fields", out var rf))
+        // revision.fields has the full current state; resource.fields for updates only has {oldValue,newValue} diffs
+        if (resource.TryGetProperty("revision", out var rev) &&
+            rev.TryGetProperty("fields", out var rf) && rf.ValueKind == JsonValueKind.Object)
             fields = rf;
+        else if (resource.TryGetProperty("fields", out var f) && f.ValueKind == JsonValueKind.Object)
+            fields = f;
         if (fields.ValueKind == JsonValueKind.Undefined) return false;
 
         var id = resource.TryGetProperty("workItemId", out var wiId) ? wiId.GetInt32() :
@@ -559,6 +569,15 @@ public class AdoWorkItemHandler
             return s.Trim('<', '>');
         }
         return null;
+    }
+
+    // Extract emails of @mentioned users from ADO comment HTML
+    // ADO renders mentions as <a href="mailto:email" data-vss-mention="...">@Name</a>
+    private static IEnumerable<string> ExtractMentionEmails(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) yield break;
+        foreach (Match m in Regex.Matches(html, @"href=""mailto:([^""]+)""[^>]*data-vss-mention", RegexOptions.IgnoreCase))
+            yield return m.Groups[1].Value.Trim();
     }
 
     private static string FormatFieldValue(JsonElement el) => el.ValueKind switch
