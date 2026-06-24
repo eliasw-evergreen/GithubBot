@@ -61,9 +61,21 @@ public class PreferencesService
     }
 
     public string? GetPingRole() => _pingRole;
-    public void SetPingRole(string roleId) { _pingRole = roleId; Save(); }
+    public void SetPingRole(string roleId) { _pingRole = StripRoleFormatting(roleId); Save(); }
     public void ClearPingRole() { _pingRole = null; Save(); }
-    public string? ResolvePingRole(string? envDefault) => _pingRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+    public string? ResolvePingRole(string? envDefault)
+    {
+        var raw = _pingRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+        return raw == null ? null : StripRoleFormatting(raw);
+    }
+
+    // Strip <@&roleId> or @&roleId down to just the numeric ID
+    private static string StripRoleFormatting(string value)
+    {
+        var s = value.Trim().TrimStart('<').TrimEnd('>');
+        if (s.StartsWith("@&")) s = s[2..];
+        return s;
+    }
 
     public string? ResolveReaction(string eventKey, string? envDefault)
     {
