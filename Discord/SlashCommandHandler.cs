@@ -53,11 +53,15 @@ public class SlashCommandHandler
         var guildIdStr = _config["Discord:GuildId"];
         if (!ulong.TryParse(guildIdStr, out var guildId)) return;
 
-        if (_prefs.GetCommandsVersion() == CommandsVersion)
+        var forceRegister = _config.GetValue<bool>("ForceRegisterCommands");
+        if (!forceRegister && _prefs.GetCommandsVersion() == CommandsVersion)
         {
             _logger.LogInformation("Slash commands already at {Version}, skipping registration", CommandsVersion);
             return;
         }
+
+        if (forceRegister)
+            _logger.LogInformation("Force-registering slash commands (--force-register-commands)");
 
         _logger.LogInformation("Registering slash commands (stored={Stored}, current={Current})",
             _prefs.GetCommandsVersion() ?? "none", CommandsVersion);
