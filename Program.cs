@@ -143,7 +143,10 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
     if (!string.IsNullOrEmpty(secret))
     {
         if (string.IsNullOrEmpty(signature))
+        {
+            appLogger.LogWarning("Webhook rejected: missing x-hub-signature-256 header");
             return Results.Unauthorized();
+        }
 
         var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
         var computed = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
@@ -152,7 +155,10 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
         if (!CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(signature),
                 Encoding.UTF8.GetBytes(expected)))
+        {
+            appLogger.LogWarning("Webhook rejected: invalid signature");
             return Results.Unauthorized();
+        }
     }
 
     // Parse action from payload
