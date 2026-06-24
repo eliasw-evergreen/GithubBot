@@ -41,10 +41,19 @@ public class SlashCommandHandler
         _channelId = ulong.TryParse(config["Discord:ChannelId"], out var id) ? id : 0;
     }
 
+    // Bump this whenever the command definitions change.
+    private const string CommandsVersion = "v4";
+
     public async Task RegisterAsync()
     {
         var guildIdStr = _config["Discord:GuildId"];
         if (!ulong.TryParse(guildIdStr, out var guildId)) return;
+
+        if (_prefs.GetCommandsVersion() == CommandsVersion)
+        {
+            _logger.LogInformation("Slash commands up to date ({Version}), skipping registration", CommandsVersion);
+            return;
+        }
 
         var rest = _client.Rest;
 
@@ -144,7 +153,8 @@ public class SlashCommandHandler
             };
 
             await rest.BulkOverwriteGuildCommands(commands, guildId);
-            _logger.LogInformation("Slash commands registered");
+            _prefs.SetCommandsVersion(CommandsVersion);
+            _logger.LogInformation("Slash commands registered ({Version})", CommandsVersion);
         }
         catch (Exception ex)
         {

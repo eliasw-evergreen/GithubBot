@@ -5,9 +5,7 @@ namespace GithubBot.Services;
 public class PreferencesService
 {
     private readonly string _filePath;
-    private Dictionary<string, string> _reactions = [];
-    private Dictionary<string, string> _channels = [];
-    private string? _pingRole;
+    private PreferencesData _data = new();
 
     public PreferencesService(string filePath)
     {
@@ -20,27 +18,24 @@ public class PreferencesService
         try
         {
             var json = File.ReadAllText(_filePath);
-            var data = JsonSerializer.Deserialize<PreferencesData>(json);
-            _reactions = data?.Reactions ?? [];
-            _pingRole = data?.PingRole;
-            _channels = data?.Channels ?? [];
+            _data = JsonSerializer.Deserialize<PreferencesData>(json) ?? new();
+            _data.Reactions ??= [];
+            _data.Channels ??= [];
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            _reactions = [];
+            _data = new();
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[PreferencesService] Failed to load {_filePath}: {ex.Message}");
-            _reactions = [];
+            _data = new();
         }
     }
 
     private void Save()
     {
-        var json = JsonSerializer.Serialize(
-            new PreferencesData { Reactions = _reactions, PingRole = _pingRole, Channels = _channels },
-            new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(_data, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
 
@@ -48,27 +43,24 @@ public class PreferencesService
 
     public string? GetReaction(string eventKey)
     {
-        _reactions.TryGetValue(eventKey, out var reaction);
+        _data.Reactions.TryGetValue(eventKey, out var reaction);
         return string.IsNullOrEmpty(reaction) ? null : reaction;
     }
 
-    public void SetReaction(string eventKey, string reaction) { _reactions[eventKey] = reaction; Save(); }
-    public void ClearReaction(string eventKey) { _reactions.Remove(eventKey); Save(); }
+    public void SetReaction(string eventKey, string reaction) { _data.Reactions[eventKey] = reaction; Save(); }
+    public void ClearReaction(string eventKey) { _data.Reactions.Remove(eventKey); Save(); }
 
     public string? ResolveReaction(string eventKey, string? envDefault)
-    {
-        var pref = GetReaction(eventKey);
-        return pref ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
-    }
+        => GetReaction(eventKey) ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
 
     // ── Ping role ─────────────────────────────────────────────────────────────
 
-    public string? GetPingRole() => _pingRole;
-    public void SetPingRole(string roleId) { _pingRole = StripDigits(roleId); Save(); }
-    public void ClearPingRole() { _pingRole = null; Save(); }
+    public string? GetPingRole() => _data.PingRole;
+    public void SetPingRole(string roleId) { _data.PingRole = StripDigits(roleId); Save(); }
+    public void ClearPingRole() { _data.PingRole = null; Save(); }
     public string? ResolvePingRole(string? envDefault)
     {
-        var raw = _pingRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+        var raw = _data.PingRole ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
         return raw == null ? null : StripDigits(raw);
     }
 
@@ -76,16 +68,20 @@ public class PreferencesService
 
     public string? GetChannel(string key)
     {
-        _channels.TryGetValue(key, out var v);
+        _data.Channels.TryGetValue(key, out var v);
         return string.IsNullOrEmpty(v) ? null : v;
     }
 
-    public void SetChannel(string key, string channelId) { _channels[key] = channelId; Save(); }
-    public void ClearChannel(string key) { _channels.Remove(key); Save(); }
+    public void SetChannel(string key, string channelId) { _data.Channels[key] = channelId; Save(); }
+    public void ClearChannel(string key) { _data.Channels.Remove(key); Save(); }
 
-    // Returns prefs override if set, otherwise envDefault
     public string? ResolveChannel(string key, string? envDefault)
         => GetChannel(key) ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
+
+    // ── Commands version ──────────────────────────────────────────────────────
+
+    public string? GetCommandsVersion() => _data.CommandsVersion;
+    public void SetCommandsVersion(string v) { _data.CommandsVersion = v; Save(); }
 
     private static string StripDigits(string value)
         => new string(value.Where(char.IsDigit).ToArray());
@@ -95,5 +91,6 @@ public class PreferencesService
         public Dictionary<string, string> Reactions { get; set; } = [];
         public string? PingRole { get; set; }
         public Dictionary<string, string> Channels { get; set; } = [];
+        public string? CommandsVersion { get; set; }
     }
 }
