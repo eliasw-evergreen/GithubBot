@@ -156,6 +156,7 @@ public class SlashCommandHandler
                 new SlashCommandBuilder()
                     .WithName("leaderboard")
                     .WithDescription("Show the top scorers")
+                    .AddOption("verbose", ApplicationCommandOptionType.Boolean, "Show per-category breakdown for each user", isRequired: false)
                     .Build(),
                 guildId);
 
@@ -419,6 +420,7 @@ public class SlashCommandHandler
 
     private async Task HandleLeaderboard(SocketSlashCommand command)
     {
+        var verbose = command.Data.Options.FirstOrDefault(o => o.Name == "verbose")?.Value is true;
         var board = _scores.GetLeaderboard().Take(10).ToList();
 
         if (board.Count == 0)
@@ -428,18 +430,39 @@ public class SlashCommandHandler
         }
 
         var medals = new[] { "🥇", "🥈", "🥉" };
-        var lines = board.Select((entry, i) =>
-        {
-            var prefix = i < medals.Length ? medals[i] : $"**#{i + 1}**";
-            return $"{prefix} <@{entry.DiscordId}> — **{entry.Entry.Total}** pts";
-        });
 
-        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
-            .WithTitle("Leaderboard")
-            .WithColor(new Color(0xF1C40F))
-            .WithDescription(string.Join('\n', lines))
-            .WithCurrentTimestamp()
-            .Build()]);
+        if (!verbose)
+        {
+            var lines = board.Select((entry, i) =>
+            {
+                var prefix = i < medals.Length ? medals[i] : $"**#{i + 1}**";
+                return $"{prefix} <@{entry.DiscordId}> — **{entry.Entry.Total}** pts";
+            });
+
+            await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+                .WithTitle("Leaderboard")
+                .WithColor(new Color(0xF1C40F))
+                .WithDescription(string.Join('\n', lines))
+                .WithCurrentTimestamp()
+                .Build()]);
+        }
+        else
+        {
+            var embed = new EmbedBuilder()
+                .WithTitle("Leaderboard")
+                .WithColor(new Color(0xF1C40F))
+                .WithCurrentTimestamp();
+
+            foreach (var (entry, i) in board.Select((e, i) => (e, i)))
+            {
+                var prefix = i < medals.Length ? medals[i] : $"#{i + 1}";
+                var breakdown = $"PRs: {entry.Entry.PrOpened / ScoreService.PointsPrOpened} opened · {entry.Entry.PrMerged / ScoreService.PointsPrMerged} merged\n" +
+                                $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}";
+                embed.AddField($"{prefix} <@{entry.DiscordId}> — {entry.Entry.Total} pts", breakdown);
+            }
+
+            await command.RespondAsync(ephemeral: true, embeds: [embed.Build()]);
+        }
     }
 
     private async Task HandleClearPingRole(SocketSlashCommand command)
