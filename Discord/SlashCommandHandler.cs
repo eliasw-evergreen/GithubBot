@@ -13,6 +13,7 @@ public class SlashCommandHandler
     private readonly PrMapService _prMap;
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
+    private readonly RouletteService _roulette;
     private readonly ConfigUiTokenService _configTokens;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
@@ -25,6 +26,7 @@ public class SlashCommandHandler
         PrMapService prMap,
         PreferencesService prefs,
         ScoreService scores,
+        RouletteService roulette,
         ConfigUiTokenService configTokens,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
@@ -34,6 +36,7 @@ public class SlashCommandHandler
         _prMap = prMap;
         _prefs = prefs;
         _scores = scores;
+        _roulette = roulette;
         _configTokens = configTokens;
         _config = config;
         _logger = logger;
@@ -42,7 +45,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v4";
+    private const string CommandsVersion = "v5";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -161,6 +164,14 @@ public class SlashCommandHandler
                     .WithName("configui")
                     .WithDescription("Generate a one-time link to the web config UI")
                     .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("prroulette")
+                    .WithDescription("Assign random users to review a PR; bonus points if they actually comment or review")
+                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to assign (start typing to search)", isRequired: true, isAutocomplete: true)
+                    .AddOption("role", ApplicationCommandOptionType.Role, "Limit candidates to this role", isRequired: false)
+                    .AddOption("count", ApplicationCommandOptionType.Integer, "Number of users to assign (default: 1)", isRequired: false)
+                    .Build(),
             };
 
             await rest.BulkOverwriteGuildCommands(commands, guildId,
@@ -235,7 +246,35 @@ public class SlashCommandHandler
             case "configui":
                 await HandleConfigUi(command);
                 break;
+            case "prroulette":
+                await HandlePrRoulette(command);
+                break;
         }
+    }
+
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        if (interaction.Data.CommandName != "prroulette") return;
+        var focused = interaction.Data.Options.FirstOrDefault(o => o.Focused);
+        if (focused?.Name != "pr") return;
+
+        var input = (focused.Value as string ?? "").ToLowerInvariant();
+
+        var choices = _prMap.GetAll()
+            .Where(kvp => kvp.Value.ClosedAt == null && kvp.Value.PrNumber != null)
+            .Select(kvp => new
+            {
+                NodeId = kvp.Key,
+                Label = $"#{kvp.Value.PrNumber} {kvp.Value.PrTitle ?? ""}".Trim(),
+                kvp.Value.PrNumber
+            })
+            .Where(x => string.IsNullOrEmpty(input) || x.Label.ToLowerInvariant().Contains(input))
+            .OrderBy(x => x.PrNumber)
+            .Take(25)
+            .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
+            .ToList();
+
+        await interaction.RespondAsync(choices);
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)
@@ -431,6 +470,80 @@ public class SlashCommandHandler
             .Build()]);
     }
 
+    private async Task HandlePrRoulette(SocketSlashCommand command)
+    {
+        var prNodeId = (string)command.Data.Options.First(o => o.Name == "pr").Value;
+        var role = command.Data.Options.FirstOrDefault(o => o.Name == "role")?.Value as SocketRole;
+        var count = command.Data.Options.FirstOrDefault(o => o.Name == "count")?.Value is long c ? (int)c : 1;
+        if (count < 1) count = 1;
+
+        var prEntry = _prMap.Get(prNodeId);
+        if (prEntry == null)
+        {
+            await command.RespondAsync("PR not found in the map.", ephemeral: true);
+            return;
+        }
+
+        var guildId = ulong.TryParse(_config["Discord:GuildId"], out var gid) ? gid : 0UL;
+        var guild = _client.GetGuild(guildId);
+        if (guild == null)
+        {
+            await command.RespondAsync("Could not resolve the guild.", ephemeral: true);
+            return;
+        }
+
+        // Build candidate pool: mapped Discord users that are guild members
+        var candidates = _userMap.GetAll().Keys
+            .Select(id => ulong.TryParse(id, out var uid) ? guild.GetUser(uid) : null)
+            .Where(u => u != null)
+            .Cast<SocketGuildUser>()
+            .Where(u => role == null || u.Roles.Any(r => r.Id == role.Id))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            await command.RespondAsync("No mapped users found" + (role != null ? $" with the {role.Mention} role" : "") + ".", ephemeral: true);
+            return;
+        }
+
+        var rng = new Random();
+        var picked = candidates.OrderBy(_ => rng.Next()).Take(count).ToList();
+        var pickedIds = picked.Select(u => u.Id.ToString()).ToList();
+
+        _roulette.Assign(prNodeId, pickedIds);
+
+        var prLabel = prEntry.PrNumber != null
+            ? $"PR #{prEntry.PrNumber}{(prEntry.PrTitle != null ? $" — {prEntry.PrTitle}" : "")}"
+            : "the PR";
+
+        var pings = string.Join(' ', picked.Select(u => $"<@{u.Id}>"));
+        var plural = picked.Count == 1 ? "has" : "have";
+        var roleNote = role != null ? $" from {role.Mention}" : "";
+
+        var embed = new EmbedBuilder()
+            .WithTitle("PR Roulette 🎰")
+            .WithColor(new Color(0xe91e63))
+            .WithDescription(
+                $"{pings}\n\n" +
+                $"You {plural} been selected{roleNote} to review **{prLabel}**!\n" +
+                $"Comment or submit a review to earn **bonus points** on top of your regular score.")
+            .WithCurrentTimestamp()
+            .Build();
+
+        // Post the roulette message in the PR thread if available, else fall back to ephemeral
+        if (prEntry.ThreadId is ulong threadId && threadId != 0)
+        {
+            await command.RespondAsync("Roulette assigned! Pinging in the PR thread.", ephemeral: true);
+            var channel = _client.GetChannel(threadId) as IMessageChannel;
+            if (channel != null)
+                await channel.SendMessageAsync(pings, embed: embed);
+        }
+        else
+        {
+            await command.RespondAsync(pings, embeds: [embed], ephemeral: false);
+        }
+    }
+
     private async Task HandleScore(SocketSlashCommand command)
     {
         var targetUser = command.Data.Options.FirstOrDefault(o => o.Name == "user")?.Value as SocketUser ?? command.User;
@@ -456,6 +569,7 @@ public class SlashCommandHandler
             .AddField("PR Merged", $"{entry.PrMerged} pts ({entry.PrMerged / ScoreService.PointsPrMerged} PR{(entry.PrMerged / ScoreService.PointsPrMerged == 1 ? "" : "s")})", inline: true)
             .AddField("Reviews", $"{entry.ReviewSubmitted} pts ({entry.ReviewSubmitted / ScoreService.PointsReview} review{(entry.ReviewSubmitted / ScoreService.PointsReview == 1 ? "" : "s")})", inline: true)
             .AddField("Comments", $"{entry.Comments} pts ({entry.Comments / ScoreService.PointsComment} comment{(entry.Comments / ScoreService.PointsComment == 1 ? "" : "s")})", inline: true)
+            .AddField("Roulette Bonus", $"{entry.Bonus} pts", inline: true)
             .WithCurrentTimestamp()
             .Build()]);
     }

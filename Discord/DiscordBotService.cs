@@ -36,6 +36,7 @@ public class DiscordBotService : IHostedService
 
         _client.Ready += OnReady;
         _client.InteractionCreated += _slashHandler.HandleInteractionAsync;
+        _client.AutocompleteExecuted += _slashHandler.HandleAutocompleteAsync;
     }
 
     public DiscordSocketClient Client => _client;

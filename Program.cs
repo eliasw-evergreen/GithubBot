@@ -75,6 +75,7 @@ builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.jso
 builder.Services.AddSingleton(new CommentMapService(Path.Combine(dataPath, "commentmap.json")));
 builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
 builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
+builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulette.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(o =>
@@ -419,13 +420,15 @@ app.MapPost("/config/ui/setscore", async (HttpContext context, ScoreService scor
     int.TryParse(form["pr_merged"], out var prMerged);
     int.TryParse(form["review"], out var review);
     int.TryParse(form["comments"], out var comments);
+    int.TryParse(form["bonus"], out var bonus);
     scores.SetScore(discordId, new ScoreEntry
     {
         PrOpened = prOpened,
         PrMerged = prMerged,
         ReviewSubmitted = review,
         Comments = comments,
-        Total = prOpened + prMerged + review + comments,
+        Bonus = bonus,
+        Total = prOpened + prMerged + review + comments + bonus,
     });
     return Results.Redirect("/config/ui");
 });

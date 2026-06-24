@@ -14,6 +14,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
+    private readonly RouletteService _roulette;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestReviewHandler> _logger;
 
@@ -23,6 +24,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         UserMapService userMap,
         PreferencesService prefs,
         ScoreService scores,
+        RouletteService roulette,
         IConfiguration config,
         ILogger<PullRequestReviewHandler> logger)
     {
@@ -31,6 +33,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         _userMap = userMap;
         _prefs = prefs;
         _scores = scores;
+        _roulette = roulette;
         _config = config;
         _logger = logger;
     }
@@ -63,7 +66,11 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
 
         if (_userMap.GitHubToDiscord(review.User.Login) is string reviewerId)
+        {
             _scores.Award(reviewerId, ScoreCategory.ReviewSubmitted);
+            if (_roulette.TryCollect(pr.NodeId, reviewerId))
+                _scores.AwardBonus(reviewerId, ScoreService.PointsReview);
+        }
 
         if (stored != null)
         {

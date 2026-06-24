@@ -7,7 +7,10 @@ public class PrMapEntry
     public ulong MessageId { get; set; }
     public ulong? ThreadId { get; set; }
     public long? ClosedAt { get; set; }
+    public int? PrNumber { get; set; }
+    public string? PrTitle { get; set; }
 }
+
 
 public class PrMapService
 {
