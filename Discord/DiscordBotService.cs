@@ -8,21 +8,22 @@ public class DiscordBotService : IHostedService
 {
     private readonly DiscordSocketClient _client;
     private readonly IConfiguration _config;
+    private readonly PreferencesService _prefs;
     private readonly UserMapService _userMap;
     private readonly SlashCommandHandler _slashHandler;
     private readonly ILogger<DiscordBotService> _logger;
 
-    private ulong _channelId;
-
     public DiscordBotService(
         DiscordSocketClient client,
         IConfiguration config,
+        PreferencesService prefs,
         UserMapService userMap,
         SlashCommandHandler slashHandler,
         ILogger<DiscordBotService> logger)
     {
         _client = client;
         _config = config;
+        _prefs = prefs;
         _userMap = userMap;
         _slashHandler = slashHandler;
         _logger = logger;
@@ -45,10 +46,14 @@ public class DiscordBotService : IHostedService
         if (string.IsNullOrEmpty(token))
             throw new InvalidOperationException("Discord bot token is not configured");
 
-        _channelId = ulong.TryParse(_config["Discord:ChannelId"], out var id) ? id : 0;
-
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
+    }
+
+    private ulong ResolveChannelId(string key, string configKey)
+    {
+        var raw = _prefs.ResolveChannel(key, _config[configKey]);
+        return ulong.TryParse(raw, out var id) ? id : 0;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -64,8 +69,9 @@ public class DiscordBotService : IHostedService
 
     public Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
     {
-        if (_channelId == 0) return Task.FromResult<IMessageChannel?>(null);
-        return Task.FromResult(_client.GetChannel(_channelId) as IMessageChannel);
+        var channelId = ResolveChannelId("pull", "Discord:ChannelId");
+        if (channelId == 0) return Task.FromResult<IMessageChannel?>(null);
+        return Task.FromResult(_client.GetChannel(channelId) as IMessageChannel);
     }
 
     public Task<IMessageChannel?> GetTargetChannel(IMessageChannel channel, PrMapEntry? stored, CancellationToken ct = default)

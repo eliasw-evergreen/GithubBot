@@ -83,6 +83,9 @@ public class ScoreService
     public ScoreEntry? GetScore(string discordId)
         => _scores.TryGetValue(discordId, out var e) ? e : null;
 
+    public void SetScore(string discordId, ScoreEntry entry) { _scores[discordId] = entry; Save(); }
+    public void ResetScore(string discordId) { _scores.Remove(discordId); Save(); }
+
     public IReadOnlyDictionary<string, ScoreEntry> GetAll() => _scores;
 
     public IEnumerable<(string DiscordId, ScoreEntry Entry)> GetLeaderboard()

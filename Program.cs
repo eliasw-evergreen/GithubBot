@@ -214,13 +214,16 @@ app.MapGet("/config", (HttpContext context, ConfigUiTokenService tokens) =>
     return Results.Redirect("/config/ui");
 });
 
-app.MapGet("/config/ui", (HttpContext context, UserMapService userMap, PreferencesService prefs, Discord.WebSocket.DiscordSocketClient discordClient, IConfiguration config) =>
+app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, PreferencesService prefs, ScoreService scores, Discord.WebSocket.DiscordSocketClient discordClient, IConfiguration config) =>
 {
     if (context.Session.GetString("auth") != "1")
         return Results.Text("Unauthorized.", statusCode: 401);
 
     var guildId = ulong.TryParse(config["Discord:GuildId"], out var gid) ? gid : 0UL;
     var guild = discordClient.GetGuild(guildId);
+
+    if (guild != null)
+        await guild.DownloadUsersAsync();
 
     var guildUsers = guild?.Users
         .OrderBy(u => u.DisplayName)
@@ -259,8 +262,31 @@ app.MapGet("/config/ui", (HttpContext context, UserMapService userMap, Preferenc
         return new ReactionInfo(t.Item1, t.Item2, value, source);
     }).ToList();
 
+    var textChannels = guild?.TextChannels
+        .OrderBy(c => c.Position)
+        .Select(c => new ChannelInfo(c.Id.ToString(), c.Name))
+        .ToList() ?? [];
+
+    var channelKeys = new[]
+    {
+        ("pull",   "PR Channel",    "Discord:ChannelId"),
+        ("ticket", "Ticket Channel","Discord:TicketChannelId"),
+    };
+    var channelConfigs = channelKeys.Select(t =>
+    {
+        var pref = prefs.GetChannel(t.Item1);
+        var env  = config[t.Item3];
+        var value = pref ?? (string.IsNullOrEmpty(env) ? null : env);
+        var source = pref != null ? "prefs" : (!string.IsNullOrEmpty(env) ? ".env" : "unset");
+        return new ChannelConfigInfo(t.Item1, t.Item2, value, source);
+    }).ToList();
+
+    var currentPingRole = prefs.ResolvePingRole(config["Roles:PrPing"]);
+    var pingRoleSource = prefs.GetPingRole() != null ? "prefs" : (!string.IsNullOrEmpty(config["Roles:PrPing"]) ? ".env" : "unset");
+
     var map = userMap.GetAll();
-    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions);
+    var allScores = scores.GetAll();
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores);
     return Results.Content(html, "text/html");
 });
 
@@ -343,6 +369,72 @@ app.MapGet("/config/ui/events", async (HttpContext context, ConfigUiTokenService
     {
         tokens.UnregisterSession(sessionId);
     }
+});
+
+app.MapPost("/config/ui/setchannel", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var key = form["key"].FirstOrDefault()?.Trim();
+    var channelId = form["channel_id"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(channelId))
+        prefs.SetChannel(key, channelId);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearchannel", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var key = form["key"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(key)) prefs.ClearChannel(key);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setpingrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var roleId = form["role_id"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(roleId)) prefs.SetPingRole(roleId);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearpingrole", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    prefs.ClearPingRole();
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setscore", async (HttpContext context, ScoreService scores) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var discordId = form["discord_id"].FirstOrDefault()?.Trim();
+    if (string.IsNullOrEmpty(discordId)) return Results.Redirect("/config/ui");
+    int.TryParse(form["pr_opened"], out var prOpened);
+    int.TryParse(form["pr_merged"], out var prMerged);
+    int.TryParse(form["review"], out var review);
+    int.TryParse(form["comments"], out var comments);
+    scores.SetScore(discordId, new ScoreEntry
+    {
+        PrOpened = prOpened,
+        PrMerged = prMerged,
+        ReviewSubmitted = review,
+        Comments = comments,
+        Total = prOpened + prMerged + review + comments,
+    });
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/resetscore", async (HttpContext context, ScoreService scores) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var discordId = form["discord_id"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(discordId)) scores.ResetScore(discordId);
+    return Results.Redirect("/config/ui");
 });
 
 app.MapPost("/config/ui/setreaction", async (HttpContext context, PreferencesService prefs) =>
