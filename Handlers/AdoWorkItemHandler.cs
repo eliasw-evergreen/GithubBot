@@ -156,8 +156,27 @@ public class AdoWorkItemHandler
         }
 
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
-        var target = await ResolveThreadAsync(channelId, wi, ct);
-        await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
+
+        // If title or description changed, rebuild and edit the original message in-place
+        var editInPlace = changedFields.ValueKind == JsonValueKind.Object &&
+            (changedFields.TryGetProperty("System.Title", out _) ||
+             changedFields.TryGetProperty("System.Description", out _));
+
+        var stored = _workItemMap.Get(wi.Id);
+        if (editInPlace && stored != null)
+        {
+            var updatedEmbed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
+            AddStandardFields(updatedEmbed, wi, showDescription: true);
+            await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
+            // Still post the field-change summary in the thread so it's visible
+            var thread = await ResolveThreadAsync(channelId, wi, ct);
+            await _discord.SendMessageAsync(thread, ping, embed.Build(), ct);
+        }
+        else
+        {
+            var target = await ResolveThreadAsync(channelId, wi, ct);
+            await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
+        }
     }
 
     // ── workitem.commented ──────────────────────────────────────────────────
