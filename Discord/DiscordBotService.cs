@@ -99,7 +99,8 @@ public class DiscordBotService : IHostedService
         int prNumber,
         string prTitle,
         string prHtmlUrl,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Embed? stubEmbed = null)
     {
         // Happy path — already tracked with a thread
         if (stored?.ThreadId is ulong existingThread && existingThread != 0)
@@ -163,11 +164,11 @@ public class DiscordBotService : IHostedService
             return channel;
         }
 
-        // Not found — post a stub and create a thread from it
+        // Not found — post a stub (or caller-supplied embed) and create a thread from it
         _logger.LogInformation("[PrResolve] No existing message found for PR #{PrNumber}, creating stub", prNumber);
 
         var stub = await textChannel.SendMessageAsync(
-            embed: new EmbedBuilder()
+            embed: stubEmbed ?? new EmbedBuilder()
                 .WithTitle($"PR #{prNumber} — {prTitle}")
                 .WithUrl(prHtmlUrl)
                 .WithColor(new Color(0x444466))

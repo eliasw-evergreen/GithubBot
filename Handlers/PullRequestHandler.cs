@@ -261,20 +261,25 @@ public class PullRequestHandler : IGitHubEventHandler
 
     private async Task HandleEdited(PullRequest pr, Repository repo, CancellationToken ct)
     {
-        var stored = _prMap.Get(pr.NodeId);
-        if (stored?.MessageId == null || stored.MessageId == 0) return;
-
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
+
+        var stored = _prMap.Get(pr.NodeId);
+
+        // For untracked PRs, attempt to find/create the thread. Pass the real embed so that
+        // if a stub has to be posted it uses the actual PR content rather than a placeholder.
+        var embed = BuildPrEmbed(pr, repo, pr.Draft ? "converted_to_draft" : "opened");
+        await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct, stubEmbed: embed);
+
+        // Re-read stored after resolution in case it was just registered
+        stored = _prMap.Get(pr.NodeId);
+        if (stored?.MessageId == null || stored.MessageId == 0) return;
 
         var originalMsg = await _discord.GetMessageAsync(channel.Id, stored.MessageId);
         if (originalMsg == null) return;
 
         var content = originalMsg.Content;
         if (!content.StartsWith("[Closed]") && !content.StartsWith("[Merged]"))
-        {
-            var updatedEmbed = BuildPrEmbed(pr, repo, pr.Draft ? "converted_to_draft" : "opened");
-            await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, updatedEmbed);
-        }
+            await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, embed);
     }
 }
