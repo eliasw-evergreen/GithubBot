@@ -163,8 +163,24 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
 
 app.MapPost("/adowebhook", async (HttpContext context) =>
 {
-    // TODO: verify ADO_WEBHOOK_SECRET (basic auth or shared secret header)
-    // TODO: parse eventType from payload ("resource.fields.System.State", etc.)
+    var adoSecret = app.Configuration["AzureDevOps:WebhookSecret"];
+    if (!string.IsNullOrEmpty(adoSecret))
+    {
+        // ADO sends credentials as HTTP Basic Auth — password is the configured secret
+        var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+            return Results.Unauthorized();
+
+        var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(authHeader["Basic ".Length..].Trim()));
+        var password = decoded.Contains(':') ? decoded[(decoded.IndexOf(':') + 1)..] : decoded;
+
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(password),
+                Encoding.UTF8.GetBytes(adoSecret)))
+            return Results.Unauthorized();
+    }
+
+    // TODO: parse eventType from payload (e.g. workitem.updated, build.complete)
     // TODO: dispatch to ADO event handlers
     appLogger.LogInformation("ADO webhook received (stub)");
     return Results.Ok("ok");
