@@ -50,141 +50,100 @@ public class SlashCommandHandler
 
         try
         {
-            var existing = await rest.GetGuildApplicationCommands(guildId);
-            foreach (var cmd in existing) await cmd.DeleteAsync();
+            var eventChoices = new SlashCommandOptionBuilder()
+                .WithName("event")
+                .WithRequired(true)
+                .WithType(ApplicationCommandOptionType.String)
+                .AddChoice("Opened",             "opened")
+                .AddChoice("Reopened",           "reopened")
+                .AddChoice("Ready for Review",   "ready_for_review")
+                .AddChoice("Converted to Draft", "converted_to_draft")
+                .AddChoice("Merged",             "merged")
+                .AddChoice("Closed",             "closed")
+                .AddChoice("Approved",           "approved")
+                .AddChoice("Changes Requested",  "changes_requested")
+                .AddChoice("Review Requested",   "review_requested")
+                .AddChoice("Assigned",           "assigned")
+                .AddChoice("Comment",            "comment");
 
-            await rest.CreateGuildCommand(
+            var typeChoice = new SlashCommandOptionBuilder()
+                .WithName("type")
+                .WithRequired(false)
+                .WithType(ApplicationCommandOptionType.String)
+                .AddChoice("GitHub", "github")
+                .AddChoice("DevOps", "devops");
+
+            var commands = new ApplicationCommandProperties[]
+            {
                 new SlashCommandBuilder()
                     .WithName("mapuser")
                     .WithDescription("Map a GitHub username or DevOps email to a Discord user")
                     .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
                     .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email", isRequired: true)
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("type")
-                        .WithDescription("Account type to map")
-                        .WithRequired(false)
-                        .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("GitHub", "github")
-                        .AddChoice("DevOps", "devops"))
+                    .AddOption(typeChoice.WithDescription("Account type to map"))
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("unmapuser")
                     .WithDescription("Remove a username mapping from a Discord user")
                     .AddOption("discord_user", ApplicationCommandOptionType.User, "The Discord user", isRequired: true)
-                    .AddOption("username", ApplicationCommandOptionType.String,
-                        "Specific username/email to remove (leave blank to remove all)", isRequired: false)
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("type")
-                        .WithDescription("Account type to remove")
-                        .WithRequired(false)
-                        .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("GitHub", "github")
-                        .AddChoice("DevOps", "devops"))
+                    .AddOption("username", ApplicationCommandOptionType.String, "Specific username/email to remove (leave blank to remove all)", isRequired: false)
+                    .AddOption(typeChoice.WithDescription("Account type to remove"))
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("listmappings")
                     .WithDescription("Show all Discord <-> GitHub/DevOps user mappings")
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("setreaction")
-                    .WithDescription("Override a reaction emoji for yourself")
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("event")
-                        .WithDescription("The event to set a reaction for")
-                        .WithRequired(true)
-                        .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Opened", "opened")
-                        .AddChoice("Reopened", "reopened")
-                        .AddChoice("Ready for Review", "ready_for_review")
-                        .AddChoice("Converted to Draft", "converted_to_draft")
-                        .AddChoice("Merged", "merged")
-                        .AddChoice("Closed", "closed")
-                        .AddChoice("Approved", "approved")
-                        .AddChoice("Changes Requested", "changes_requested")
-                        .AddChoice("Review Requested", "review_requested")
-                        .AddChoice("Assigned", "assigned")
-                        .AddChoice("Comment", "comment"))
+                    .WithDescription("Override a reaction emoji for an event")
+                    .AddOption(eventChoices.WithDescription("The event to set a reaction for"))
                     .AddOption("emoji", ApplicationCommandOptionType.String, "Emoji or custom emote ID to use", isRequired: true)
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("clearreaction")
-                    .WithDescription("Remove your reaction override and use the server default")
-                    .AddOption(new SlashCommandOptionBuilder()
-                        .WithName("event")
-                        .WithDescription("The event to clear")
-                        .WithRequired(true)
-                        .WithType(ApplicationCommandOptionType.String)
-                        .AddChoice("Opened", "opened")
-                        .AddChoice("Reopened", "reopened")
-                        .AddChoice("Ready for Review", "ready_for_review")
-                        .AddChoice("Converted to Draft", "converted_to_draft")
-                        .AddChoice("Merged", "merged")
-                        .AddChoice("Closed", "closed")
-                        .AddChoice("Approved", "approved")
-                        .AddChoice("Changes Requested", "changes_requested")
-                        .AddChoice("Review Requested", "review_requested")
-                        .AddChoice("Assigned", "assigned")
-                        .AddChoice("Comment", "comment"))
+                    .WithDescription("Remove a reaction override and use the server default")
+                    .AddOption(eventChoices.WithDescription("The event to clear"))
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("listreactions")
                     .WithDescription("Show all active reactions (preferences override .env)")
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("setpingrole")
                     .WithDescription("Set the role to ping when a PR is opened or merged")
                     .AddOption("role", ApplicationCommandOptionType.Role, "The role to ping", isRequired: true)
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("clearpingrole")
                     .WithDescription("Clear the ping role override and fall back to .env")
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("score")
                     .WithDescription("Show your score and stats, or view another user's score")
                     .AddOption("user", ApplicationCommandOptionType.User, "User to look up (defaults to yourself)", isRequired: false)
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("leaderboard")
                     .WithDescription("Show the top scorers")
                     .AddOption("verbose", ApplicationCommandOptionType.Boolean, "Show per-category breakdown for each user", isRequired: false)
                     .Build(),
-                guildId);
 
-            await rest.CreateGuildCommand(
                 new SlashCommandBuilder()
                     .WithName("configui")
-                    .WithDescription("Generate a one-time link to the user mapping web UI")
+                    .WithDescription("Generate a one-time link to the web config UI")
                     .Build(),
-                guildId);
+            };
 
+            await rest.BulkOverwriteGuildCommands(commands, guildId);
             _logger.LogInformation("Slash commands registered");
         }
         catch (Exception ex)
