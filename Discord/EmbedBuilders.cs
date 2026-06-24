@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Discord;
 using GithubBot.Models;
 using GithubBot.Services;
@@ -47,6 +48,10 @@ public static class EmbedBuilders
 
         if (action is "opened" or "reopened" or "ready_for_review")
             embed.AddField("Description", description);
+
+        var ticket = ExtractDevOpsTicket(pr.Body);
+        if (ticket != null)
+            embed.AddField("Ticket", $"[#{ticket.Id}]({ticket.Url})", inline: true);
 
         if (action == "closed_merged" && pr.MergedBy != null)
         {
@@ -191,5 +196,19 @@ public static class EmbedBuilders
     {
         if (string.IsNullOrEmpty(reaction)) return null;
         return reaction.Trim();
+    }
+
+    private record DevOpsTicket(string Url, string Id);
+
+    // Matches dev.azure.com and visualstudio.com work item URLs
+    private static readonly Regex DevOpsPattern = new(
+        @"https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/(\d+)",
+        RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
+
+    private static DevOpsTicket? ExtractDevOpsTicket(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return null;
+        var m = DevOpsPattern.Match(body);
+        return m.Success ? new DevOpsTicket(m.Value, m.Groups[1].Value) : null;
     }
 }

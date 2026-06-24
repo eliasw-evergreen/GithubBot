@@ -5,6 +5,8 @@ using DotNetEnv;
 using GithubBot.Discord;
 using GithubBot.Handlers;
 using GithubBot.Services;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -88,7 +90,19 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
     o.BufferBody = true;
 });
 
+builder.Host.UseSerilog((ctx, cfg) => cfg
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Hosting", LogEventLevel.Warning)
+    .WriteTo.Console()
+    .WriteTo.File(
+        Path.Combine(repoRoot, "logs", "log-.txt"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 30,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}"));
+
 var app = builder.Build();
+var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
 // ── Webhook endpoint ─────────────────────────────────────────────────────
 
@@ -133,13 +147,13 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
         var pruneDays = app.Configuration.GetValue<int>("PruneDays");
         prMap.Prune(pruneDays);
 
-        Console.WriteLine($"[{eventType}] Received webhook (action: {action})");
+        appLogger.LogInformation("Webhook received event={EventType} action={Action}", eventType, action);
 
         await dispatcher.DispatchAsync(eventType, action, payload);
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"[{eventType}] Error: {ex}");
+        appLogger.LogError(ex, "Webhook error event={EventType} action={Action}", eventType, action);
     }
 
     return Results.Ok("ok");

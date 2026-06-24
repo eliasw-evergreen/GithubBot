@@ -6,3 +6,4 @@ node_modules/
 # C# build artifacts
 bin/
 obj/
+logs/
