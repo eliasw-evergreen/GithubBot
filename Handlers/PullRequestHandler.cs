@@ -75,6 +75,8 @@ public class PullRequestHandler : IGitHubEventHandler
 
     private async Task HandleOpenActions(string action, PullRequest pr, Repository repo, CancellationToken ct)
     {
+        var imageUrl = EmbedBuilders.ExtractFirstImageUrl(pr.Body);
+        _logger.LogInformation("PR #{Number} image extracted: {ImageUrl}", pr.Number, imageUrl ?? "(none)");
         var embed = BuildPrEmbed(pr, repo, action);
         var mention = _userMap.GitHubToDiscord(pr.User.Login) is string did ? $"<@{did}>" : $"**{pr.User.Login}**";
         var rolePing = _config["Roles:PrPing"];

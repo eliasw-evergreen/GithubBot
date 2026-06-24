@@ -216,6 +216,8 @@ public static class EmbedBuilders
 
     // ── Image handling ────────────────────────────────────────────────────────
 
+    public static string? ExtractFirstImageUrl(string? body) => CleanBody(body).ImageUrl;
+
     private record CleanedBody(string Text, string? ImageUrl);
 
     // Matches <img ... src="url" ... /> and markdown ![alt](url)
