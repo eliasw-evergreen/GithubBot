@@ -78,6 +78,17 @@ public class PreferencesService
     public string? ResolveChannel(string key, string? envDefault)
         => GetChannel(key) ?? (string.IsNullOrEmpty(envDefault) ? null : envDefault);
 
+    // ── Roulette exclusions ───────────────────────────────────────────────────
+
+    public bool IsRouletteExcluded(string discordId) => _data.RouletteExclusions.Contains(discordId);
+    public IReadOnlySet<string> GetRouletteExclusions() => _data.RouletteExclusions;
+    public void SetRouletteExclusion(string discordId, bool excluded)
+    {
+        if (excluded) _data.RouletteExclusions.Add(discordId);
+        else _data.RouletteExclusions.Remove(discordId);
+        Save();
+    }
+
     // ── Commands version ──────────────────────────────────────────────────────
 
     public string? GetCommandsVersion() => _data.CommandsVersion;
@@ -92,5 +103,6 @@ public class PreferencesService
         public string? PingRole { get; set; }
         public Dictionary<string, string> Channels { get; set; } = [];
         public string? CommandsVersion { get; set; }
+        public HashSet<string> RouletteExclusions { get; set; } = [];
     }
 }

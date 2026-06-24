@@ -162,7 +162,8 @@ Copy `.env.example` to `.env` and fill in all values:
 | `PUBLIC_HOST` | Yes | Public base URL of the server, e.g. `https://your-vps-domain.com` — used to generate web config UI links |
 | `PORT` | No | Port for the webhook server (default: `3000`) |
 | `PR_PING_ROLE` | No | Discord role ID to ping when a PR is opened or merged |
-| `CONFIG_ROLE` | No | Discord role ID allowed to use slash commands |
+| `CONFIG_ROLE` | No | Discord role ID allowed to use `/configui` |
+| `COMMAND_ROLE` | No | Discord role ID allowed to use `/score`, `/leaderboard`, `/prroulette` |
 | `PRUNE_DAYS` | No | Days to keep closed PR entries before pruning (default: `14`) |
 | `DISCORD_TICKET_CHANNEL_ID` | No | Channel ID for Azure DevOps notifications (future use) |
 | `ADO_WEBHOOK_SECRET` | No | Secret for the Azure DevOps webhook Basic Auth |

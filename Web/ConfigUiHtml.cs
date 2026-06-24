@@ -20,7 +20,8 @@ public static class ConfigUiHtml
         List<ChannelConfigInfo> channelConfigs,
         string? currentPingRole,
         string pingRoleSource,
-        IReadOnlyDictionary<string, ScoreEntry> scores)
+        IReadOnlyDictionary<string, ScoreEntry> scores,
+        IReadOnlySet<string> rouletteExclusions)
     {
         var sb = new StringBuilder();
         sb.Append("""
@@ -78,12 +79,13 @@ public static class ConfigUiHtml
             sb.Append($"<option value=\"{role.Id}\">{Esc(role.Name)}</option>");
         sb.Append("</select></div>");
 
-        sb.Append("<table><thead><tr><th>Discord User</th><th>Mappings</th><th>Add</th></tr></thead><tbody>");
+        sb.Append("<table><thead><tr><th>Discord User</th><th>Mappings</th><th>Add</th><th>Roulette</th></tr></thead><tbody>");
         foreach (var user in guildUsers)
         {
             map.TryGetValue(user.Id, out var entries);
             entries ??= [];
             var roleAttr = string.Join(",", user.RoleIds);
+            var excluded = rouletteExclusions.Contains(user.Id);
             sb.Append($"<tr data-roles=\"{roleAttr}\"><td><div class=\"uname\">{Esc(user.Name)}</div><div class=\"uid\">{user.Id}</div></td><td>");
             foreach (var entry in entries)
             {
@@ -98,7 +100,12 @@ public static class ConfigUiHtml
                 <input type="hidden" name="discord_id" value="{user.Id}">
                 <input type="text" name="username" placeholder="username or email" style="width:160px">
                 <select name="type"><option value="github">GitHub</option><option value="devops">DevOps</option></select>
-                <button type="submit" class="btn">Add</button></form></td></tr>
+                <button type="submit" class="btn">Add</button></form></td>
+                <td><form method="post" action="/config/ui/setrouletteexclusion">
+                <input type="hidden" name="discord_id" value="{user.Id}">
+                <input type="hidden" name="excluded" value="{(excluded ? "0" : "1")}">
+                <button type="submit" class="{(excluded ? "btn-red" : "btn-sm")}" title="{(excluded ? "Excluded from roulette — click to include" : "Click to exclude from roulette")}">
+                {(excluded ? "Excluded" : "Include")}</button></form></td></tr>
                 """);
         }
         sb.Append("</tbody></table>");

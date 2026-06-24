@@ -52,6 +52,7 @@ var envMap = new Dictionary<string, string?>
     ["Reactions:ConvertedToDraft"] = Env.GetString("CONVERTED_TO_DRAFT_REACTION"),
     ["Roles:PrPing"] = Env.GetString("PR_PING_ROLE"),
     ["Roles:Config"] = Env.GetString("CONFIG_ROLE"),
+    ["Roles:Command"] = Env.GetString("COMMAND_ROLE"),
     ["PruneDays"] = Env.GetString("PRUNE_DAYS"),
     ["Port"] = Env.GetString("PORT"),
     ["PublicHost"] = Env.GetString("PUBLIC_HOST"),
@@ -289,7 +290,8 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
 
     var map = userMap.GetAll();
     var allScores = scores.GetAll();
-    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores);
+    var rouletteExclusions = prefs.GetRouletteExclusions();
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions);
     return Results.Content(html, "text/html");
 });
 
@@ -468,6 +470,17 @@ app.MapPost("/config/ui/clearreaction", async (HttpContext context, PreferencesS
     if (!string.IsNullOrEmpty(eventKey))
         prefs.ClearReaction(eventKey);
 
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setrouletteexclusion", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var discordId = form["discord_id"].FirstOrDefault()?.Trim();
+    var excluded = form["excluded"].FirstOrDefault() == "1";
+    if (!string.IsNullOrEmpty(discordId))
+        prefs.SetRouletteExclusion(discordId, excluded);
     return Results.Redirect("/config/ui");
 });
 

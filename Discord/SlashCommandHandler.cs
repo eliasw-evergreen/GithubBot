@@ -127,8 +127,9 @@ public class SlashCommandHandler
 
         if (!_noAuth)
         {
-            var configRole = _config["Roles:Config"];
-            if (!string.IsNullOrEmpty(configRole) && ulong.TryParse(configRole, out var roleId))
+            var roleKey = command.Data.Name == "configui" ? "Roles:Config" : "Roles:Command";
+            var requiredRole = _config[roleKey];
+            if (!string.IsNullOrEmpty(requiredRole) && ulong.TryParse(requiredRole, out var roleId))
             {
                 if (command.User is SocketGuildUser guildUser && !guildUser.Roles.Any(r => r.Id == roleId))
                 {
@@ -218,11 +219,12 @@ public class SlashCommandHandler
             return;
         }
 
-        // Build candidate pool: mapped Discord users that are guild members
+        // Build candidate pool: mapped Discord users that are guild members and not excluded
         var candidates = _userMap.GetAll().Keys
             .Select(id => ulong.TryParse(id, out var uid) ? guild.GetUser(uid) : null)
             .Where(u => u != null)
             .Cast<SocketGuildUser>()
+            .Where(u => !_prefs.IsRouletteExcluded(u.Id.ToString()))
             .Where(u => role == null || u.Roles.Any(r => r.Id == role.Id))
             .ToList();
 
