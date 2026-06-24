@@ -586,6 +586,7 @@ public class AdoWorkItemHandler
     // Register GUID→Discord mapping from an identity JsonElement (has both "id" and "uniqueName")
     private void TryRegisterGuid(JsonElement identityEl)
     {
+        _logger.LogInformation("[ADO] TryRegisterGuid kind={Kind} raw={Raw}", identityEl.ValueKind, identityEl.GetRawText()[..Math.Min(200, identityEl.GetRawText().Length)]);
         if (identityEl.ValueKind != JsonValueKind.Object) return;
         if (!identityEl.TryGetProperty("id", out var guidEl)) return;
         var guid = guidEl.GetString();
@@ -593,6 +594,7 @@ public class AdoWorkItemHandler
         var email = identityEl.TryGetProperty("uniqueName", out var un) ? un.GetString() : null;
         if (string.IsNullOrEmpty(email)) return;
         var discordId = _userMap.AdoToDiscord(email);
+        _logger.LogInformation("[ADO] RegisterGuid guid={Guid} email={Email} discord={Discord}", guid, email, discordId ?? "null");
         if (discordId != null)
             _userMap.RegisterAdoGuid(guid, discordId);
     }
