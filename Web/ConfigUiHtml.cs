@@ -171,6 +171,7 @@ public static class ConfigUiHtml
               const colon = e.data.indexOf(':');
               const type = e.data.slice(0, colon);
               const name = e.data.slice(colon + 1);
+              if (type === 'reload') { location.reload(); return; }
               if (type === 'join') others.add(name);
               else if (type === 'leave') others.delete(name);
               updateBanner();

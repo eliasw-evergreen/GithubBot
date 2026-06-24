@@ -28,6 +28,7 @@ public class ConfigUiTokenService
         var currentUsers = _activeSessions.Values.Select(v => v.Username).ToList();
         _activeSessions[sessionId] = (username, channel);
         Broadcast(sessionId, $"join:{username}");
+        Broadcast(sessionId, "reload");
         return (channel, currentUsers);
     }
 
