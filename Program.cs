@@ -135,7 +135,7 @@ app.MapPost("/ghwebhook", async (HttpContext context, WebhookEventDispatcher dis
     }
 
     // Parse action from payload
-    string action;
+    var action = "";
     try
     {
         using var doc = JsonDocument.Parse(body);
