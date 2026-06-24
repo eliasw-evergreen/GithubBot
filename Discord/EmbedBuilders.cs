@@ -96,35 +96,6 @@ public static class EmbedBuilders
         return embed.Build();
     }
 
-    public static Embed DeletedCommentEmbed(IssueComment comment, PullRequest pr, Repository repo, bool isReview, UserMapService userMap, string? commentReaction = null)
-    {
-        var cleaned = CleanBody(comment.Body);
-        var body = !string.IsNullOrWhiteSpace(cleaned.Text) ? Truncate(cleaned.Text, 1024) : "*No content.*";
-        var author = Mention(userMap, comment.User.Login);
-        var emoji = ReactionEmoji(commentReaction) ?? "💬";
-
-        var embed = new EmbedBuilder()
-            .WithTitle(isReview ? $"🗑️ Review Comment Removed" : $"🗑️ PR Comment Removed")
-            .WithUrl(pr.HtmlUrl)
-            .WithColor(Color.Red)
-            .WithAuthor(comment.User.Login, comment.User.AvatarUrl, $"https://github.com/{comment.User.Login}")
-            .AddField("Author", author, inline: true)
-            .AddField("Content", body)
-            .WithFooter(repo.FullName)
-            .WithCurrentTimestamp();
-
-        if (isReview && !string.IsNullOrEmpty(comment.Path))
-        {
-            var line = comment.Line ?? comment.OriginalLine;
-            embed.AddField("Location", $"`{comment.Path}` line {line?.ToString() ?? "?"}", inline: true);
-        }
-
-        if (cleaned.ImageUrl != null)
-            embed.WithImageUrl(cleaned.ImageUrl);
-
-        return embed.Build();
-    }
-
     public static Embed ReviewRequestEmbed(PullRequest pr, Repository repo, List<GitHubUser> reviewers, GitHubUser sender, UserMapService userMap, string? reviewRequestedReaction = null)
     {
         var reviewerNames = string.Join(", ", reviewers.Select(r => $"**{r.Login}**"));
@@ -217,6 +188,28 @@ public static class EmbedBuilders
     // ── Image handling ────────────────────────────────────────────────────────
 
     public static string? ExtractFirstImageUrl(string? body) => CleanBody(body).ImageUrl;
+
+    public static global::Discord.Embed MarkCommentDeleted(IEmbed src)
+    {
+        var builder = new EmbedBuilder()
+            .WithTitle("🗑️ Comment Deleted")
+            .WithColor(Color.Red)
+            .WithUrl(src.Url)
+            .WithFooter(src.Footer?.Text)
+            .WithImageUrl(src.Image?.Url)
+            .WithThumbnailUrl(src.Thumbnail?.Url);
+
+        if (src.Author != null)
+            builder.WithAuthor(src.Author.Value.Name, src.Author.Value.IconUrl, src.Author.Value.Url);
+
+        if (src.Timestamp.HasValue)
+            builder.WithTimestamp(src.Timestamp.Value);
+
+        foreach (var field in src.Fields)
+            builder.AddField(field.Name, field.Value, field.Inline);
+
+        return builder.Build();
+    }
 
     private record CleanedBody(string Text, string? ImageUrl);
 

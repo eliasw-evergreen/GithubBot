@@ -102,6 +102,21 @@ public class DiscordBotService : IHostedService
         });
     }
 
+    public async Task DeleteMessageAsync(ulong channelId, ulong messageId)
+    {
+        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        if (channel == null) return;
+        try
+        {
+            var msg = await channel.GetMessageAsync(messageId) as IUserMessage;
+            if (msg != null) await msg.DeleteAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete message {MessageId}", messageId);
+        }
+    }
+
     public async Task<IMessage?> GetMessageAsync(ulong channelId, ulong messageId)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;

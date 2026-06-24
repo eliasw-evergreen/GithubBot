@@ -8,4 +8,5 @@ obj/
 logs/
 usermap.json
 prmap.json
+commentmap.json
 preferences.json

@@ -11,6 +11,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
 
     private readonly DiscordBotService _discord;
     private readonly PrMapService _prMap;
+    private readonly CommentMapService _commentMap;
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
     private readonly IConfiguration _config;
@@ -19,6 +20,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
     public PullRequestReviewCommentHandler(
         DiscordBotService discord,
         PrMapService prMap,
+        CommentMapService commentMap,
         UserMapService userMap,
         PreferencesService prefs,
         IConfiguration config,
@@ -26,6 +28,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
     {
         _discord = discord;
         _prMap = prMap;
+        _commentMap = commentMap;
         _userMap = userMap;
         _prefs = prefs;
         _config = config;
@@ -34,33 +37,52 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
 
     public async Task HandleAsync(string action, JsonElement payload, CancellationToken ct = default)
     {
-        if (action != "created" && action != "deleted") return;
+        if (action != "created" && action != "edited" && action != "deleted") return;
 
         var comment = payload.GetProperty("comment").Deserialize<IssueComment>()!;
         var pr = payload.GetProperty("pull_request").Deserialize<PullRequest>()!;
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
-        var isDeleted = action == "deleted";
-
-        var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
-        var embed = isDeleted
-            ? EmbedBuilders.DeletedCommentEmbed(comment, pr, repo, true, _userMap, commentReaction)
-            : EmbedBuilders.CommentEmbed(comment, pr, repo, true, _userMap, commentReaction);
-
-        var mentionedPings = ExtractGithubMentions(comment.Body);
 
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
         var target = await _discord.GetTargetChannel(channel, stored, ct);
-        await _discord.SendMessageAsync(target.Id, string.Join(' ', mentionedPings), embed, ct);
+        var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
 
-        if (stored != null && !isDeleted)
+        if (action == "deleted")
         {
-            var reaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
-            if (!string.IsNullOrEmpty(reaction))
-                await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
+            var entry = _commentMap.Get(comment.Id);
+            if (entry != null)
+            {
+                var original = await _discord.GetMessageAsync(entry.ChannelId, entry.MessageId);
+                if (original?.Embeds.FirstOrDefault() is IEmbed existingEmbed)
+                    await _discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null,
+                        EmbedBuilders.MarkCommentDeleted(existingEmbed));
+                _commentMap.Remove(comment.Id);
+            }
+            return;
         }
+
+        var embed = EmbedBuilders.CommentEmbed(comment, pr, repo, true, _userMap, commentReaction);
+        var mentionedPings = ExtractGithubMentions(comment.Body);
+
+        if (action == "edited")
+        {
+            var entry = _commentMap.Get(comment.Id);
+            if (entry != null)
+            {
+                await _discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null, embed);
+                return;
+            }
+        }
+
+        var msg = await _discord.SendMessageAsync(target.Id, string.Join(' ', mentionedPings), embed, ct);
+        if (msg != null)
+            _commentMap.Set(comment.Id, new CommentMapEntry { MessageId = msg.Id, ChannelId = target.Id });
+
+        if (stored != null && !string.IsNullOrEmpty(commentReaction))
+            await _discord.AddReactionAsync(channel.Id, stored.MessageId, commentReaction, ct);
     }
 
     private List<string> ExtractGithubMentions(string? text)
