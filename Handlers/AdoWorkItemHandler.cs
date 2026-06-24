@@ -135,9 +135,13 @@ public class AdoWorkItemHandler
             embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
         }
 
+        // Only ping if AssignedTo actually changed to a new person (oldValue → newValue differ)
         string? ping = null;
         if (changedFields.ValueKind == JsonValueKind.Object &&
-            changedFields.TryGetProperty("System.AssignedTo", out _) &&
+            changedFields.TryGetProperty("System.AssignedTo", out var atDiff) &&
+            atDiff.TryGetProperty("newValue", out var atNew) &&
+            atDiff.TryGetProperty("oldValue", out var atOld) &&
+            FormatFieldValue(atNew) != FormatFieldValue(atOld) &&
             wi.AssignedToDiscord != null)
             ping = $"<@{wi.AssignedToDiscord}>";
 
