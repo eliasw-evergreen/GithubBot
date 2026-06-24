@@ -51,7 +51,7 @@ public class PullRequestReviewCommentHandler : IGitHubEventHandler
         if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
 
         if (action == "deleted")

@@ -9,6 +9,7 @@ public class ScoreEntry
     public int PrMerged    { get; set; }
     public int ReviewSubmitted { get; set; }
     public int Comments    { get; set; }
+    public int Bonus       { get; set; }
 }
 
 public enum ScoreCategory { PrOpened, PrMerged, ReviewSubmitted, Comment }
@@ -83,7 +84,20 @@ public class ScoreService
     public ScoreEntry? GetScore(string discordId)
         => _scores.TryGetValue(discordId, out var e) ? e : null;
 
+    public void SetScore(string discordId, ScoreEntry entry) { _scores[discordId] = entry; Save(); }
+    public void ResetScore(string discordId) { _scores.Remove(discordId); Save(); }
+
     public IReadOnlyDictionary<string, ScoreEntry> GetAll() => _scores;
+
+    public void AwardBonus(string discordId, int points)
+    {
+        if (!_scores.TryGetValue(discordId, out var entry))
+            entry = new ScoreEntry();
+        entry.Total += points;
+        entry.Bonus += points;
+        _scores[discordId] = entry;
+        Save();
+    }
 
     public IEnumerable<(string DiscordId, ScoreEntry Entry)> GetLeaderboard()
         => _scores

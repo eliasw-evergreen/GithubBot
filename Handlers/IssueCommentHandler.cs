@@ -16,6 +16,7 @@ public class IssueCommentHandler : IGitHubEventHandler
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
+    private readonly RouletteService _roulette;
     private readonly IConfiguration _config;
     private readonly ILogger<IssueCommentHandler> _logger;
 
@@ -26,6 +27,7 @@ public class IssueCommentHandler : IGitHubEventHandler
         UserMapService userMap,
         PreferencesService prefs,
         ScoreService scores,
+        RouletteService roulette,
         IConfiguration config,
         ILogger<IssueCommentHandler> logger)
     {
@@ -35,6 +37,7 @@ public class IssueCommentHandler : IGitHubEventHandler
         _userMap = userMap;
         _prefs = prefs;
         _scores = scores;
+        _roulette = roulette;
         _config = config;
         _logger = logger;
     }
@@ -54,7 +57,7 @@ public class IssueCommentHandler : IGitHubEventHandler
         if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
 
         if (action == "deleted")
@@ -90,7 +93,11 @@ public class IssueCommentHandler : IGitHubEventHandler
         {
             _commentMap.Set(comment.Id, new CommentMapEntry { MessageId = msg.Id, ChannelId = target.Id });
             if (_userMap.GitHubToDiscord(comment.User.Login) is string commenterId)
+            {
                 _scores.Award(commenterId, ScoreCategory.Comment);
+                if (_roulette.TryCollect(pr.NodeId, commenterId))
+                    _scores.AwardBonus(commenterId, ScoreService.PointsComment);
+            }
         }
 
         if (stored != null && !string.IsNullOrEmpty(commentReaction))

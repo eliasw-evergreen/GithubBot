@@ -14,6 +14,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
     private readonly UserMapService _userMap;
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
+    private readonly RouletteService _roulette;
     private readonly IConfiguration _config;
     private readonly ILogger<PullRequestReviewHandler> _logger;
 
@@ -23,6 +24,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         UserMapService userMap,
         PreferencesService prefs,
         ScoreService scores,
+        RouletteService roulette,
         IConfiguration config,
         ILogger<PullRequestReviewHandler> logger)
     {
@@ -31,6 +33,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         _userMap = userMap;
         _prefs = prefs;
         _scores = scores;
+        _roulette = roulette;
         _config = config;
         _logger = logger;
     }
@@ -42,6 +45,11 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         var review = payload.GetProperty("review").Deserialize<Review>()!;
         var pr = payload.GetProperty("pull_request").Deserialize<PullRequest>()!;
         var repo = payload.GetProperty("repository").Deserialize<Repository>()!;
+
+        // A "commented" review with no body means the user only left inline comments;
+        // those are handled by PullRequestReviewCommentHandler — skip to avoid double-posting.
+        if (review.State == "commented" && string.IsNullOrWhiteSpace(review.Body))
+            return;
 
         var embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap,
             approvedReaction: _prefs.ResolveReaction("approved", _config["Reactions:Approved"]),
@@ -59,11 +67,15 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         if (channel == null) return;
 
         var stored = _prMap.Get(pr.NodeId);
-        var target = await _discord.GetTargetChannel(channel, stored, ct);
+        var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct);
         await _discord.SendMessageAsync(target.Id, pings.Count > 0 ? string.Join(' ', pings) : null, embed, ct);
 
         if (_userMap.GitHubToDiscord(review.User.Login) is string reviewerId)
+        {
             _scores.Award(reviewerId, ScoreCategory.ReviewSubmitted);
+            if (_roulette.TryCollect(pr.NodeId, reviewerId))
+                _scores.AwardBonus(reviewerId, ScoreService.PointsReview);
+        }
 
         if (stored != null)
         {
