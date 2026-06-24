@@ -167,7 +167,8 @@ public class DiscordBotService : IHostedService
         if (msg == null) return;
 
         IEmote emote = ParseEmote(reaction);
-        await msg.AddReactionAsync(emote);
+        try { await msg.AddReactionAsync(emote); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to add reaction {Reaction} — check emoji is accessible to the bot", reaction); }
     }
 
     private static bool EmotesMatch(IEmote a, IEmote b)

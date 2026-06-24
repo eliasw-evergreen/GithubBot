@@ -167,10 +167,7 @@ public class PullRequestHandler : IGitHubEventHandler
                     var envDefault = merged ? _config["Reactions:Merged"] : _config["Reactions:Closed"];
                     var reaction = _prefs.ResolveReaction(reactionKey, envDefault);
                     if (!string.IsNullOrEmpty(reaction))
-                    {
-                        try { await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct); }
-                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to add reaction {Reaction} — check emoji is accessible to the bot", reaction); }
-                    }
+                        await _discord.AddReactionAsync(channel.Id, stored.MessageId, reaction, ct);
 
                     var cleanContent = System.Text.RegularExpressions.Regex.Replace(
                         originalMsg.Content, @"^\[(?:Closed|Merged)\] ", "");
