@@ -111,6 +111,11 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("listmappings")
+                    .WithDescription("List all Discord ↔ GitHub/DevOps user mappings")
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("map-user")
                     .WithDescription("Map a Discord user to a GitHub or DevOps identity")
                     .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email/display name", isRequired: true)
@@ -179,6 +184,9 @@ public class SlashCommandHandler
                 break;
             case "botdelete":
                 await HandleBotDelete(command);
+                break;
+            case "listmappings":
+                await HandleListMappings(command);
                 break;
             case "map-user":
                 await HandleMapUser(command);
@@ -336,6 +344,32 @@ public class SlashCommandHandler
         if (skipped > 0) reply += $" {skipped} ID{(skipped == 1 ? "" : "s")} skipped (not found, not mine, or invalid).";
 
         await command.FollowupAsync(reply, ephemeral: true);
+    }
+
+    private async Task HandleListMappings(SocketSlashCommand command)
+    {
+        var map = _userMap.GetAll();
+        if (map.Count == 0)
+        {
+            await command.RespondAsync("No mappings configured yet.", ephemeral: true);
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var (discordId, entry) in map)
+        {
+            var parts = new List<string>();
+            if (entry.Gh.Count > 0)  parts.Add($"GH: {string.Join(", ", entry.Gh)}");
+            if (entry.Ado.Count > 0) parts.Add($"ADO: {string.Join(", ", entry.Ado)}");
+            if (parts.Count > 0)
+                lines.Add($"<@{discordId}> — {string.Join(" · ", parts)}");
+        }
+
+        await command.RespondAsync(ephemeral: true, embeds: [new EmbedBuilder()
+            .WithTitle("User Mappings")
+            .WithColor(new Color(0x5865F2))
+            .WithDescription(string.Join('\n', lines))
+            .Build()]);
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)
