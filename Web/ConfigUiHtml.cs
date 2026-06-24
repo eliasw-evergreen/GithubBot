@@ -48,6 +48,9 @@ public static class ConfigUiHtml
               .tag { display: inline-block; padding: .1rem .45rem; border-radius: 4px; font-size: .8rem; margin: .1rem .1rem .1rem 0; }
               .tag-gh  { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
               .tag-ado { background: #0078d433; color: #60baff; border: 1px solid #0078d455; }
+              .map-group { display: flex; align-items: center; flex-wrap: wrap; gap: .2rem; margin-bottom: .25rem; }
+              .map-group:last-child { margin-bottom: 0; }
+              .map-label { font-size: .7rem; color: #888; min-width: 46px; }
               button.remove { background: none; border: none; color: #f87171; cursor: pointer; font-size: .8rem; padding: 0 .2rem; opacity: .6; }
               button.remove:hover { opacity: 1; }
               .f { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
@@ -92,15 +95,25 @@ public static class ConfigUiHtml
             var roleAttr = string.Join(",", user.RoleIds);
             var excluded = rouletteExclusions.Contains(user.Id);
             sb.Append($"<tr data-roles=\"{roleAttr}\"><td><div class=\"uname\">{Esc(user.Name)}</div><div class=\"uid\">{user.Id}</div></td><td>");
-            foreach (var v in ghList)
+            if (ghList.Count > 0)
             {
-                sb.Append($"<span class=\"tag tag-gh\" title=\"GitHub\">{Esc(v)}</span>");
-                sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="gh"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+                sb.Append("<div class=\"map-group\"><span class=\"map-label\">GitHub</span>");
+                foreach (var v in ghList)
+                {
+                    sb.Append($"<span class=\"tag tag-gh\">{Esc(v)}</span>");
+                    sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="gh"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+                }
+                sb.Append("</div>");
             }
-            foreach (var v in adoList)
+            if (adoList.Count > 0)
             {
-                sb.Append($"<span class=\"tag tag-ado\" title=\"DevOps\">{Esc(v)}</span>");
-                sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="ado"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+                sb.Append("<div class=\"map-group\"><span class=\"map-label\">DevOps</span>");
+                foreach (var v in adoList)
+                {
+                    sb.Append($"<span class=\"tag tag-ado\">{Esc(v)}</span>");
+                    sb.Append($"""<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="{user.Id}"><input type="hidden" name="array" value="ado"><input type="hidden" name="value" value="{Esc(v)}"><button type="submit" class="remove" title="Remove">✕</button></form>""");
+                }
+                sb.Append("</div>");
             }
             if (ghList.Count == 0 && adoList.Count == 0) sb.Append("<span class=\"no-entries\">—</span>");
             sb.Append($"""
@@ -369,11 +382,19 @@ public static class ConfigUiHtml
                 // Remove the "—" placeholder if present
                 mappingsCell.querySelector('.no-entries')?.remove();
                 const cls = isAdo ? 'tag-ado' : 'tag-gh';
-                const title = isAdo ? 'DevOps' : 'GitHub';
+                const labelText = isAdo ? 'DevOps' : 'GitHub';
                 const arrayName = isAdo ? 'ado' : 'gh';
-                const tagHtml = `<span class="tag ${cls}" title="${title}">${username}</span>`;
+                const tagHtml = `<span class="tag ${cls}">${username}</span>`;
                 const removeHtml = `<form method="post" action="/config/ui/remove" style="display:inline"><input type="hidden" name="discord_id" value="${fd.get('discord_id')}"><input type="hidden" name="array" value="${arrayName}"><input type="hidden" name="value" value="${username}"><button type="submit" class="remove" title="Remove">✕</button></form>`;
-                mappingsCell.insertAdjacentHTML('beforeend', tagHtml + removeHtml);
+                // Find or create the group div for this type
+                let group = [...mappingsCell.querySelectorAll('.map-group')].find(g => g.querySelector('.map-label')?.textContent === labelText);
+                if (!group) {
+                  group = document.createElement('div');
+                  group.className = 'map-group';
+                  group.innerHTML = `<span class="map-label">${labelText}</span>`;
+                  mappingsCell.appendChild(group);
+                }
+                group.insertAdjacentHTML('beforeend', tagHtml + removeHtml);
                 form.querySelector('input[name="username"]').value = '';
                 return;
               }
