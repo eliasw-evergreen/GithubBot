@@ -212,20 +212,53 @@ app.MapGet("/config", (HttpContext context, ConfigUiTokenService tokens) =>
     return Results.Redirect("/config/ui");
 });
 
-app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Discord.WebSocket.DiscordSocketClient discordClient, IConfiguration config) =>
+app.MapGet("/config/ui", (HttpContext context, UserMapService userMap, PreferencesService prefs, Discord.WebSocket.DiscordSocketClient discordClient, IConfiguration config) =>
 {
     if (context.Session.GetString("auth") != "1")
         return Results.Text("Unauthorized.", statusCode: 401);
 
     var guildId = ulong.TryParse(config["Discord:GuildId"], out var gid) ? gid : 0UL;
     var guild = discordClient.GetGuild(guildId);
+
     var guildUsers = guild?.Users
         .OrderBy(u => u.DisplayName)
-        .Select(u => (Id: u.Id.ToString(), Name: u.DisplayName))
+        .Select(u => new GuildUserInfo(
+            u.Id.ToString(),
+            u.DisplayName,
+            u.Roles.Select(r => r.Id.ToString()).ToList()))
         .ToList() ?? [];
 
+    var roles = guild?.Roles
+        .Where(r => !r.IsEveryone)
+        .Select(r => new GuildRoleInfo(r.Id.ToString(), r.Name))
+        .ToList() ?? [];
+
+    var reactionKeys = new[]
+    {
+        ("opened",             "Opened",             "Reactions:Opened"),
+        ("reopened",           "Reopened",           "Reactions:Reopened"),
+        ("ready_for_review",   "Ready for Review",   "Reactions:ReadyForReview"),
+        ("converted_to_draft", "Converted to Draft", "Reactions:ConvertedToDraft"),
+        ("merged",             "Merged",             "Reactions:Merged"),
+        ("closed",             "Closed",             "Reactions:Closed"),
+        ("approved",           "Approved",           "Reactions:Approved"),
+        ("changes_requested",  "Changes Requested",  "Reactions:ChangesRequested"),
+        ("review_requested",   "Review Requested",   "Reactions:ReviewRequested"),
+        ("assigned",           "Assigned",           "Reactions:Assigned"),
+        ("comment",            "Comment",            "Reactions:Comment"),
+    };
+
+    var reactions = reactionKeys.Select(t =>
+    {
+        var pref = prefs.GetReaction(t.Item1);
+        var env  = config[t.Item3];
+        var value = pref ?? (string.IsNullOrEmpty(env) ? null : env);
+        var source = pref != null ? "prefs" : (!string.IsNullOrEmpty(env) ? ".env" : "unset");
+        return new ReactionInfo(t.Item1, t.Item2, value, source);
+    }).ToList();
+
     var map = userMap.GetAll();
-    var html = ConfigUiHtml.Render(guildUsers, map);
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions);
     return Results.Content(html, "text/html");
 });
 
@@ -274,6 +307,35 @@ app.MapPost("/config/ui/remove", async (HttpContext context, UserMapService user
         else map[discordId] = existing;
         userMap.Save(map);
     }
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setreaction", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1")
+        return Results.Text("Unauthorized.", statusCode: 401);
+
+    var form = await context.Request.ReadFormAsync();
+    var eventKey = form["event"].FirstOrDefault()?.Trim();
+    var emoji    = form["emoji"].FirstOrDefault()?.Trim();
+
+    if (!string.IsNullOrEmpty(eventKey) && !string.IsNullOrEmpty(emoji))
+        prefs.SetReaction(eventKey, emoji);
+
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearreaction", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1")
+        return Results.Text("Unauthorized.", statusCode: 401);
+
+    var form = await context.Request.ReadFormAsync();
+    var eventKey = form["event"].FirstOrDefault()?.Trim();
+
+    if (!string.IsNullOrEmpty(eventKey))
+        prefs.ClearReaction(eventKey);
+
     return Results.Redirect("/config/ui");
 });
 
