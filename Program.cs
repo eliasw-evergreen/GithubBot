@@ -507,6 +507,9 @@ app.MapPost("/config/ui/setscore", async (HttpContext context, ScoreService scor
     int.TryParse(form["pr_merged"], out var prMerged);
     int.TryParse(form["review"], out var review);
     int.TryParse(form["comments"], out var comments);
+    int.TryParse(form["ticket_created"], out var ticketCreated);
+    int.TryParse(form["ticket_resolved"], out var ticketResolved);
+    int.TryParse(form["ticket_comments"], out var ticketComments);
     int.TryParse(form["bonus"], out var bonus);
     scores.SetScore(discordId, new ScoreEntry
     {
@@ -514,8 +517,11 @@ app.MapPost("/config/ui/setscore", async (HttpContext context, ScoreService scor
         PrMerged = prMerged,
         ReviewSubmitted = review,
         Comments = comments,
+        TicketCreated = ticketCreated,
+        TicketResolved = ticketResolved,
+        TicketComments = ticketComments,
         Bonus = bonus,
-        Total = prOpened + prMerged + review + comments + bonus,
+        Total = prOpened + prMerged + review + comments + ticketCreated + ticketResolved + ticketComments + bonus,
     });
     return Results.Redirect("/config/ui");
 });

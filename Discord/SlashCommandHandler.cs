@@ -45,7 +45,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v6";
+    private const string CommandsVersion = "v7";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -84,7 +84,14 @@ public class SlashCommandHandler
                 new SlashCommandBuilder()
                     .WithName("leaderboard")
                     .WithDescription("Show the top scorers")
-                    .AddOption("verbose", ApplicationCommandOptionType.Boolean, "Show per-category breakdown for each user", isRequired: false)
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("top")
+                        .WithType(ApplicationCommandOptionType.SubCommand)
+                        .WithDescription("Show top scorers (compact view)"))
+                    .AddOption(new SlashCommandOptionBuilder()
+                        .WithName("verbose")
+                        .WithType(ApplicationCommandOptionType.SubCommand)
+                        .WithDescription("Show per-category breakdown for each user"))
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -353,7 +360,7 @@ public class SlashCommandHandler
 
     private async Task HandleLeaderboard(SocketSlashCommand command)
     {
-        var verbose = command.Data.Options.FirstOrDefault(o => o.Name == "verbose")?.Value is true;
+        var verbose = command.Data.Options.FirstOrDefault()?.Name == "verbose";
         var board = _scores.GetLeaderboard().Take(10).ToList();
 
         if (board.Count == 0)
@@ -391,7 +398,10 @@ public class SlashCommandHandler
                 var prefix = i < medals.Length ? medals[i] : $"#{i + 1}";
                 var value = $"{prefix} <@{entry.DiscordId}> — **{entry.Entry.Total} pts**\n" +
                             $"PRs: {entry.Entry.PrOpened / ScoreService.PointsPrOpened} opened · {entry.Entry.PrMerged / ScoreService.PointsPrMerged} merged · " +
-                            $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}";
+                            $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}\n" +
+                            $"Tickets: {entry.Entry.TicketCreated / ScoreService.PointsTicketCreated} created · " +
+                            $"{entry.Entry.TicketResolved} resolved pts · " +
+                            $"{entry.Entry.TicketComments / ScoreService.PointsTicketComment} ticket comments";
                 embed.AddField("​", value);
             }
 

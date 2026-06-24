@@ -189,7 +189,7 @@ public static class ConfigUiHtml
 
         // ── Score Editor ────────────────────────────────────────────────────
         sb.Append("<h2>Score Editor</h2>");
-        sb.Append("<table><thead><tr><th>User</th><th>PR Opened</th><th>PR Merged</th><th>Reviews</th><th>Comments</th><th>Total</th><th></th></tr></thead><tbody>");
+        sb.Append("<table><thead><tr><th>User</th><th>PR Opened</th><th>PR Merged</th><th>Reviews</th><th>Comments</th><th>Ticket Created</th><th>Ticket Resolved</th><th>Ticket Comments</th><th>Total</th><th></th></tr></thead><tbody>");
         foreach (var (discordId, entry) in scores.OrderByDescending(s => s.Value.Total))
         {
             var name = guildUsers.FirstOrDefault(u => u.Id == discordId)?.Name ?? discordId;
@@ -200,6 +200,9 @@ public static class ConfigUiHtml
                 <td><input type="number" data-field="pr_merged" value="{entry.PrMerged}" min="0"></td>
                 <td><input type="number" data-field="review" value="{entry.ReviewSubmitted}" min="0"></td>
                 <td><input type="number" data-field="comments" value="{entry.Comments}" min="0"></td>
+                <td><input type="number" data-field="ticket_created" value="{entry.TicketCreated}" min="0"></td>
+                <td><input type="number" data-field="ticket_resolved" value="{entry.TicketResolved}" min="0"></td>
+                <td><input type="number" data-field="ticket_comments" value="{entry.TicketComments}" min="0"></td>
                 <td class="score-total"><strong>{entry.Total}</strong></td>
                 <td class="f">
                   <button class="btn" onclick="saveScore(this)">Save</button>
@@ -208,7 +211,7 @@ public static class ConfigUiHtml
                 """);
         }
         if (scores.Count == 0)
-            sb.Append("<tr><td colspan=\"7\" class=\"no-entries\">No scores recorded yet.</td></tr>");
+            sb.Append("<tr><td colspan=\"10\" class=\"no-entries\">No scores recorded yet.</td></tr>");
 
         // Add user row
         sb.Append("""<tr style="background:#222238" data-score-id=""><td>""");
@@ -221,6 +224,9 @@ public static class ConfigUiHtml
             <td><input type="number" data-field="pr_merged" value="0" min="0"></td>
             <td><input type="number" data-field="review" value="0" min="0"></td>
             <td><input type="number" data-field="comments" value="0" min="0"></td>
+            <td><input type="number" data-field="ticket_created" value="0" min="0"></td>
+            <td><input type="number" data-field="ticket_resolved" value="0" min="0"></td>
+            <td><input type="number" data-field="ticket_comments" value="0" min="0"></td>
             <td></td>
             <td><button class="btn" onclick="addScore(this)">Add</button></td>
             </tr>
@@ -319,6 +325,9 @@ public static class ConfigUiHtml
                 <td><input type="number" data-field="pr_merged" value="${fd.get('pr_merged')||0}" min="0"></td>
                 <td><input type="number" data-field="review" value="${fd.get('review')||0}" min="0"></td>
                 <td><input type="number" data-field="comments" value="${fd.get('comments')||0}" min="0"></td>
+                <td><input type="number" data-field="ticket_created" value="${fd.get('ticket_created')||0}" min="0"></td>
+                <td><input type="number" data-field="ticket_resolved" value="${fd.get('ticket_resolved')||0}" min="0"></td>
+                <td><input type="number" data-field="ticket_comments" value="${fd.get('ticket_comments')||0}" min="0"></td>
                 <td class="score-total"><strong>${total}</strong></td>
                 <td class="f">
                   <button class="btn" onclick="saveScore(this)">Save</button>
