@@ -174,6 +174,7 @@ public class AdoWorkItemHandler
         if (!string.IsNullOrEmpty(commenterEmail))
         {
             var d = _userMap.AdoToDiscord(commenterEmail);
+            _logger.LogInformation("[ADO] Comment by email={Email} resolved={Resolved}", commenterEmail, d ?? "null");
             embed.AddField("By", d != null ? $"<@{d}>" : commenterEmail, inline: true);
         }
 
@@ -448,10 +449,11 @@ public class AdoWorkItemHandler
         {
             var s = el.GetString() ?? "";
             // ADO sometimes sends "Display Name email@domain.com" as a plain string
+            s = s.Trim();
             var lastSpace = s.LastIndexOf(' ');
             if (lastSpace >= 0)
             {
-                var tail = s.Substring(lastSpace + 1);
+                var tail = s.Substring(lastSpace + 1).Trim();
                 if (tail.Contains('@')) return tail;
             }
             return s;
