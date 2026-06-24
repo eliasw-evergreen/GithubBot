@@ -11,6 +11,7 @@ public class AdoWorkItemHandler
     private readonly DiscordBotService _discord;
     private readonly UserMapService _userMap;
     private readonly WorkItemMapService _workItemMap;
+    private readonly ScoreService _scores;
     private readonly IConfiguration _config;
     private readonly ILogger<AdoWorkItemHandler> _logger;
 
@@ -18,12 +19,14 @@ public class AdoWorkItemHandler
         DiscordBotService discord,
         UserMapService userMap,
         WorkItemMapService workItemMap,
+        ScoreService scores,
         IConfiguration config,
         ILogger<AdoWorkItemHandler> logger)
     {
         _discord = discord;
         _userMap = userMap;
         _workItemMap = workItemMap;
+        _scores = scores;
         _config = config;
         _logger = logger;
     }
@@ -41,6 +44,8 @@ public class AdoWorkItemHandler
         string? ping = wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : null;
 
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
+        if (!string.IsNullOrEmpty(wi.CreatedByEmail) && _userMap.AdoToDiscord(wi.CreatedByEmail) is string creatorId)
+            _scores.Award(creatorId, ScoreCategory.TicketCreated);
         var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
         if (msg != null)
         {
@@ -115,6 +120,22 @@ public class AdoWorkItemHandler
             wi.AssignedToDiscord != null)
             ping = $"<@{wi.AssignedToDiscord}>";
 
+        // Award resolved points to assignee if state changed to a done state
+        if (changedFields.ValueKind == JsonValueKind.Object &&
+            changedFields.TryGetProperty("System.State", out var stateChange) &&
+            stateChange.TryGetProperty("newValue", out var newState))
+        {
+            var newStateStr = newState.ValueKind == JsonValueKind.String ? newState.GetString() : null;
+            var doneStates = new[] { "Resolved", "Closed", "Done" };
+            if (newStateStr != null && doneStates.Contains(newStateStr, StringComparer.OrdinalIgnoreCase))
+            {
+                var resolvedBy = !string.IsNullOrEmpty(wi.AssignedToDiscord) ? wi.AssignedToDiscord
+                    : (!string.IsNullOrEmpty(wi.ChangedByEmail) ? _userMap.AdoToDiscord(wi.ChangedByEmail) : null);
+                if (resolvedBy != null)
+                    _scores.AwardTicketResolved(resolvedBy, wi.WorkItemType);
+            }
+        }
+
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
         var target = await ResolveThreadAsync(channelId, wi, ct);
         await _discord.SendMessageAsync(target, ping, embed.Build(), ct);
@@ -156,6 +177,8 @@ public class AdoWorkItemHandler
             embed.AddField("By", d != null ? $"<@{d}>" : commenterEmail, inline: true);
         }
 
+        if (!string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
+            _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
         _logger.LogInformation("[ADO] Work item commented #{Id}", workItemId);
 
         // Use a minimal WorkItemInfo for thread resolution
