@@ -31,7 +31,8 @@ public static class EmbedBuilders
         };
 
         var draftTag = pr.Draft ? " *(Draft)*" : "";
-        var description = !string.IsNullOrEmpty(pr.Body) ? Truncate(pr.Body, 1024) : "*No description provided.*";
+        var descriptionRaw = StripDevOpsLinks(pr.Body);
+        var description = !string.IsNullOrWhiteSpace(descriptionRaw) ? Truncate(descriptionRaw, 1024) : "*No description provided.*";
         var author = Mention(userMap, pr.User.Login);
 
         var embed = new EmbedBuilder()
@@ -210,5 +211,16 @@ public static class EmbedBuilders
         if (string.IsNullOrEmpty(body)) return null;
         var m = DevOpsPattern.Match(body);
         return m.Success ? new DevOpsTicket(m.Value, m.Groups[1].Value) : null;
+    }
+
+    // Strip DevOps URLs and any markdown [text](devops-url) wrappers around them
+    private static readonly Regex DevOpsLinkPattern = new(
+        @"\[([^\]]*)\]\(https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+\)|https://(?:dev\.azure\.com/[\w\-]+|[\w\-]+\.visualstudio\.com)/[\w\-]+/_workitems/edit/\d+",
+        RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
+
+    private static string StripDevOpsLinks(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return "";
+        return DevOpsLinkPattern.Replace(body, "").Trim();
     }
 }
