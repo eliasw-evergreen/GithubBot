@@ -170,7 +170,7 @@ public class AdoApiService
 
         // Fetch only Id, Title, WorkItemType — lightweight
         var results = new List<(int, string?, string?)>();
-        foreach (var batch in ids.Take(500).Chunk(200))
+        foreach (var batch in ids.Chunk(200))
         {
             var joined = string.Join(',', batch);
             var url = $"{_orgUrl}/_apis/wit/workitems?ids={joined}&fields=System.Id,System.Title,System.WorkItemType&api-version=7.1";
