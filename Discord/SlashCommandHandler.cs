@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v17";
+    private const string CommandsVersion = "v18";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -110,10 +110,10 @@ public class SlashCommandHandler
 
                 new SlashCommandBuilder()
                     .WithName("prroulette")
-                    .WithDescription("Assign random users to review a PR; bonus points if they actually comment or review")
-                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to assign (start typing to search)", isRequired: true, isAutocomplete: true)
+                    .WithDescription("Assign reviewers to a PR, or balance reviewers across all open PRs")
+                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to assign (omit to assign across all open PRs)", isRequired: false, isAutocomplete: true)
                     .AddOption("role", ApplicationCommandOptionType.Role, "Limit candidates to this role", isRequired: false)
-                    .AddOption("count", ApplicationCommandOptionType.Integer, "Number of users to assign (default: 1)", isRequired: false)
+                    .AddOption("count", ApplicationCommandOptionType.Integer, "Reviewers per PR (default: 1)", isRequired: false)
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -398,17 +398,10 @@ public class SlashCommandHandler
 
     private async Task HandlePrRoulette(SocketSlashCommand command)
     {
-        var prNodeId = (string)command.Data.Options.First(o => o.Name == "pr").Value;
+        var prNodeId = command.Data.Options.FirstOrDefault(o => o.Name == "pr")?.Value as string;
         var role = command.Data.Options.FirstOrDefault(o => o.Name == "role")?.Value as SocketRole;
         var count = command.Data.Options.FirstOrDefault(o => o.Name == "count")?.Value is long c ? (int)c : 1;
         if (count < 1) count = 1;
-
-        var prEntry = _prMap.Get(prNodeId);
-        if (prEntry == null)
-        {
-            await command.RespondAsync("PR not found in the map.", ephemeral: true);
-            return;
-        }
 
         var guildId = ulong.TryParse(_config["Discord:GuildId"], out var gid) ? gid : 0UL;
         var guild = _client.GetGuild(guildId);
@@ -418,47 +411,117 @@ public class SlashCommandHandler
             return;
         }
 
-        // Build candidate pool: mapped Discord users that are guild members, not excluded, and not the PR author
-        var authorDiscordId = prEntry.AuthorLogin != null ? _userMap.GitHubToDiscord(prEntry.AuthorLogin) : null;
-        var candidates = _userMap.GetAll().Keys
+        // Base pool: mapped, in guild, not excluded, optional role filter
+        var basePool = _userMap.GetAll().Keys
             .Select(id => ulong.TryParse(id, out var uid) ? guild.GetUser(uid) : null)
             .Where(u => u != null)
             .Cast<SocketGuildUser>()
             .Where(u => !_prefs.IsRouletteExcluded(u.Id.ToString()))
-            .Where(u => authorDiscordId == null || u.Id.ToString() != authorDiscordId)
             .Where(u => role == null || u.Roles.Any(r => r.Id == role.Id))
             .ToList();
 
-        if (candidates.Count == 0)
+        if (prNodeId != null)
         {
-            await command.RespondAsync("No mapped users found" + (role != null ? $" with the {role.Mention} role" : "") + ".", ephemeral: true);
-            return;
+            // ── Single PR mode ────────────────────────────────────────────────
+            var prEntry = _prMap.Get(prNodeId);
+            if (prEntry == null)
+            {
+                await command.RespondAsync("PR not found in the map.", ephemeral: true);
+                return;
+            }
+
+            var candidates = ExcludeAuthor(basePool, prEntry);
+            if (candidates.Count == 0)
+            {
+                await command.RespondAsync("No eligible users found" + (role != null ? $" with the {role.Mention} role" : "") + ".", ephemeral: true);
+                return;
+            }
+
+            var rng = new Random();
+            var picked = candidates.OrderBy(_ => rng.Next()).Take(count).ToList();
+            _roulette.Assign(prNodeId, picked.Select(u => u.Id.ToString()).ToList());
+            await PostRouletteAsync(command, prEntry, picked, role);
         }
+        else
+        {
+            // ── Bulk mode: assign across all open PRs ─────────────────────────
+            await command.DeferAsync(ephemeral: true);
 
-        var rng = new Random();
-        var picked = candidates.OrderBy(_ => rng.Next()).Take(count).ToList();
-        var pickedIds = picked.Select(u => u.Id.ToString()).ToList();
+            var openPrs = _prMap.GetAll()
+                .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0)
+                .ToList();
 
-        _roulette.Assign(prNodeId, pickedIds);
+            if (openPrs.Count == 0)
+            {
+                await command.ModifyOriginalResponseAsync(m => m.Content = "No open PRs found.");
+                return;
+            }
 
-        var prLabel = prEntry.PrNumber != null
-            ? $"PR #{prEntry.PrNumber}{(prEntry.PrTitle != null ? $" — {prEntry.PrTitle}" : "")}"
+            // Running tally — assign least-loaded eligible users to each PR
+            var tally = basePool.ToDictionary(u => u.Id, _ => 0);
+            var rng = new Random();
+            int posted = 0;
+
+            foreach (var kv in openPrs)
+            {
+                var eligible = ExcludeAuthor(basePool, kv.Value);
+                if (eligible.Count == 0) continue;
+
+                var picked = eligible
+                    .OrderBy(u => tally[u.Id])
+                    .ThenBy(_ => rng.Next())
+                    .Take(count)
+                    .ToList();
+
+                foreach (var u in picked) tally[u.Id]++;
+                _roulette.Assign(kv.Key, picked.Select(u => u.Id.ToString()).ToList());
+
+                if (kv.Value.ThreadId is ulong threadId)
+                {
+                    var thread = _client.GetChannel(threadId) as IMessageChannel;
+                    if (thread != null)
+                    {
+                        var embed = BuildRouletteEmbed(kv.Value, picked, role).Build();
+                        var pings = string.Join(' ', picked.Select(u => $"<@{u.Id}>"));
+                        await thread.SendMessageAsync(pings, embed: embed);
+                        posted++;
+                    }
+                }
+            }
+
+            var roleNote = role != null ? $" from {role.Mention}" : "";
+            await command.ModifyOriginalResponseAsync(m => m.Content =
+                $"🎰 Assigned {count} reviewer{(count == 1 ? "" : "s")}{roleNote} to {posted} open PR{(posted == 1 ? "" : "s")}, balanced by load.");
+        }
+    }
+
+    private List<SocketGuildUser> ExcludeAuthor(List<SocketGuildUser> pool, PrMapEntry entry)
+    {
+        var authorDiscordId = entry.AuthorLogin != null ? _userMap.GitHubToDiscord(entry.AuthorLogin) : null;
+        return pool.Where(u => authorDiscordId == null || u.Id.ToString() != authorDiscordId).ToList();
+    }
+
+    private static EmbedBuilder BuildRouletteEmbed(PrMapEntry entry, List<SocketGuildUser> picked, SocketRole? role)
+    {
+        var prLabel = entry.PrNumber != null
+            ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}"
             : "the PR";
-
         var pings = string.Join(' ', picked.Select(u => $"<@{u.Id}>"));
         var plural = picked.Count == 1 ? "has" : "have";
         var roleNote = role != null ? $" from {role.Mention}" : "";
-
-        var embed = new EmbedBuilder()
+        return new EmbedBuilder()
             .WithTitle("PR Roulette 🎰")
             .WithColor(new Color(0xe91e63))
-            .WithDescription(
-                $"{pings}\n\nYou {plural} been selected{roleNote} to review **{prLabel}**!")
-            .WithCurrentTimestamp()
-            .Build();
+            .WithDescription($"{pings}\n\nYou {plural} been selected{roleNote} to review **{prLabel}**!")
+            .WithCurrentTimestamp();
+    }
 
-        // Post the roulette message in the PR thread if available, else fall back to ephemeral
-        if (prEntry.ThreadId is ulong threadId && threadId != 0)
+    private async Task PostRouletteAsync(SocketSlashCommand command, PrMapEntry entry, List<SocketGuildUser> picked, SocketRole? role)
+    {
+        var embed = BuildRouletteEmbed(entry, picked, role).Build();
+        var pings = string.Join(' ', picked.Select(u => $"<@{u.Id}>"));
+
+        if (entry.ThreadId is ulong threadId && threadId != 0)
         {
             await command.RespondAsync("Roulette assigned! Pinging in the PR thread.", ephemeral: true);
             var channel = _client.GetChannel(threadId) as IMessageChannel;
@@ -646,6 +709,14 @@ public class SlashCommandHandler
         var picked = pool[rng.Next(pool.Count)];
         var entry = picked.Value;
 
+        var guildIdStr = _config["Discord:GuildId"];
+        var prChannelId = ulong.TryParse(_config["Discord:ChannelId"], out var pcid) ? pcid : _channelId;
+        var msgLink = guildIdStr != null && entry.MessageId != 0
+            ? $"https://discord.com/channels/{guildIdStr}/{entry.ThreadId?.ToString() ?? prChannelId.ToString()}/{entry.MessageId}"
+            : null;
+        var prLabel = entry.PrNumber != null ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}" : "a PR";
+        var linkText = msgLink != null ? $"[{prLabel}]({msgLink})" : $"**{prLabel}**";
+
         // Post the ping in the thread
         if (entry.ThreadId is ulong prThreadId)
         {
@@ -664,16 +735,14 @@ public class SlashCommandHandler
 
             if (thread != null)
             {
-                var prLabel = entry.PrNumber != null ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}" : "a PR";
                 await thread.SendMessageAsync($"<@{command.User.Id}> You've been assigned to review **{prLabel}**! 🎯");
-                await command.ModifyOriginalResponseAsync(m => m.Content = $"Assigned you to {thread.Name}!{fallbackNote}");
+                await command.ModifyOriginalResponseAsync(m => m.Content = $"Assigned you to {linkText}!{fallbackNote}");
                 return;
             }
         }
 
-        // No accessible thread — just tell them
-        var label = entry.PrNumber != null ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}" : "a PR";
-        await command.ModifyOriginalResponseAsync(m => m.Content = $"You should review **{label}**!{fallbackNote}");
+        // No accessible thread — just tell them with a link
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"You should review {linkText}!{fallbackNote}");
     }
 
     private async Task HandleUntrackTicket(SocketSlashCommand command)
