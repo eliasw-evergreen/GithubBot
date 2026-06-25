@@ -151,6 +151,51 @@ public class AdoApiService
         return await GetWorkItemsAsync(ids, ct);
     }
 
+    private List<(int Id, string? Title, string? Type)>? _summaryCache;
+    private DateTime _summaryCacheTime;
+    private static readonly TimeSpan SummaryCacheTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Returns a lightweight list of work item IDs, titles, and types for autocomplete.
+    /// Results are cached for 10 minutes.
+    /// </summary>
+    public async Task<List<(int Id, string? Title, string? Type)>> GetWorkItemSummariesAsync(CancellationToken ct = default)
+    {
+        if (_summaryCache != null && DateTime.UtcNow - _summaryCacheTime < SummaryCacheTtl)
+            return _summaryCache;
+
+        var wiql = "SELECT [System.Id] FROM WorkItems WHERE [System.State] NOT IN ('Removed') ORDER BY [System.ChangedDate] DESC";
+        var ids = await RunWiqlAsync(wiql, ct);
+        if (ids.Count == 0) return _summaryCache ?? [];
+
+        // Fetch only Id, Title, WorkItemType — lightweight
+        var results = new List<(int, string?, string?)>();
+        foreach (var batch in ids.Take(500).Chunk(200))
+        {
+            var joined = string.Join(',', batch);
+            var url = $"{_orgUrl}/_apis/wit/workitems?ids={joined}&fields=System.Id,System.Title,System.WorkItemType&api-version=7.1";
+            var response = await _http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) continue;
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            if (!doc.RootElement.TryGetProperty("value", out var value)) continue;
+
+            foreach (var el in value.EnumerateArray())
+            {
+                var f = el.TryGetProperty("fields", out var fi) ? fi : default;
+                if (f.ValueKind == JsonValueKind.Undefined) continue;
+                var id = el.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0;
+                results.Add((id, Str(f, "System.Title"), Str(f, "System.WorkItemType")));
+            }
+        }
+
+        _summaryCache = results;
+        _summaryCacheTime = DateTime.UtcNow;
+        return results;
+    }
+
+    public void InvalidateSummaryCache() => _summaryCache = null;
+
     private List<string>? _areaPathCache;
 
     /// <summary>

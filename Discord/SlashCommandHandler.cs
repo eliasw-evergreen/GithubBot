@@ -271,6 +271,32 @@ public class SlashCommandHandler
             return;
         }
 
+        if (interaction.Data.CommandName == "trackticket" && focused.Name == "id" && _adoApi != null)
+        {
+            var summaries = await _adoApi.GetWorkItemSummariesAsync();
+            var trackedIds = _workItemMap.GetAll().Keys
+                .Select(k => int.TryParse(k, out var n) ? n : 0)
+                .ToHashSet();
+
+            var choices = summaries
+                .Where(x => string.IsNullOrEmpty(input) ||
+                             x.Id.ToString().Contains(input) ||
+                             (x.Title?.ToLowerInvariant().Contains(input) ?? false))
+                .OrderBy(x => trackedIds.Contains(x.Id) ? 1 : 0) // untracked first
+                .ThenByDescending(x => x.Id)
+                .Take(25)
+                .Select(x =>
+                {
+                    var tracked = trackedIds.Contains(x.Id) ? " ✓" : "";
+                    var label = $"#{x.Id}{(x.Type != null ? $" [{x.Type}]" : "")}{(x.Title != null ? $" — {x.Title}" : "")}{tracked}";
+                    if (label.Length > 100) label = label[..100];
+                    return new AutocompleteResult(label, (long)x.Id);
+                })
+                .ToList();
+            await interaction.RespondAsync(choices);
+            return;
+        }
+
         if (interaction.Data.CommandName == "untrackticket" && focused.Name == "id")
         {
             var choices = _workItemMap.GetAll()
