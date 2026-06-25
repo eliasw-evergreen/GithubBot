@@ -432,9 +432,9 @@ public class SlashCommandHandler
             {
                 var tracked = _workItemMap.Get(wi.Id);
                 var threadLink = tracked?.ThreadId.HasValue == true
-                    ? $"<#{tracked.ThreadId.Value}>"
-                    : tracked?.MessageId != 0 && guildId.HasValue
-                        ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{tracked!.MessageId}"
+                    ? $"<#{tracked.ThreadId!.Value}>"
+                    : tracked != null && tracked.MessageId != 0 && guildId.HasValue
+                        ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{tracked.MessageId}"
                         : null;
                 var type = string.IsNullOrEmpty(wi.WorkItemType) ? "" : $" [{wi.WorkItemType}]";
                 var title = string.IsNullOrEmpty(wi.Title) ? "" : $" — {wi.Title}";
