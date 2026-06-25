@@ -62,6 +62,7 @@ var envMap = new Dictionary<string, string?>
     ["AzureDevOps:Project"]       = Env.GetString("ADO_PROJECT"),
     ["AzureDevOps:Pat"]           = Env.GetString("ADO_PAT"),
     ["GitHub:Pat"]                = Env.GetString("GITHUB_PAT"),
+    ["GitHub:Repos"]              = Env.GetString("GITHUB_REPOS"),
 };
 
 builder.Configuration

@@ -77,11 +77,7 @@ public class SlashCommandHandler
                 _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
             if (_gitHub != null)
             {
-                var repos = _prMap.GetAll().Values
-                    .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
-                    .Select(e => e.RepoFullName!)
-                    .Distinct()
-                    .ToList();
+                var repos = GetKnownGitHubRepos();
                 if (repos.Count > 0)
                     _ = Task.Run(() => _gitHub.RefreshPrSummariesAsync(repos));
             }
@@ -215,11 +211,7 @@ public class SlashCommandHandler
             _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
         if (_gitHub != null)
         {
-            var repos = _prMap.GetAll().Values
-                .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
-                .Select(e => e.RepoFullName!)
-                .Distinct()
-                .ToList();
+            var repos = GetKnownGitHubRepos();
             if (repos.Count > 0)
                 _ = Task.Run(() => _gitHub.RefreshPrSummariesAsync(repos));
         }
@@ -328,11 +320,7 @@ public class SlashCommandHandler
 
         if (interaction.Data.CommandName == "trackpr" && focused.Name == "pr" && _gitHub != null)
         {
-            var repos = _prMap.GetAll().Values
-                .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
-                .Select(e => e.RepoFullName!)
-                .Distinct()
-                .ToList();
+            var repos = GetKnownGitHubRepos();
             var trackedKeys = _prMap.GetAll()
                 .Where(kv => kv.Value.PrNumber != null && !string.IsNullOrEmpty(kv.Value.RepoFullName))
                 .Select(kv => $"{kv.Value.RepoFullName}|{kv.Value.PrNumber}")
@@ -587,6 +575,16 @@ public class SlashCommandHandler
             await command.ModifyOriginalResponseAsync(m => m.Content =
                 $"🎰 Assigned {count} reviewer{(count == 1 ? "" : "s")}{roleNote} to {posted} open PR{(posted == 1 ? "" : "s")}, balanced by load.");
         }
+    }
+
+    private List<string> GetKnownGitHubRepos()
+    {
+        var fromMap = _prMap.GetAll().Values
+            .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
+            .Select(e => e.RepoFullName!);
+        var fromConfig = (_config["GitHub:Repos"] ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return fromMap.Concat(fromConfig).Distinct().ToList();
     }
 
     private static bool IsDraftPr(PrMapEntry entry)
