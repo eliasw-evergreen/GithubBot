@@ -285,16 +285,15 @@ public class SlashCommandHandler
                 .ToHashSet();
 
             var choices = summaries
+                .Where(x => !trackedIds.Contains(x.Id))
                 .Where(x => string.IsNullOrEmpty(input) ||
                              x.Id.ToString().Contains(input) ||
                              (x.Title?.ToLowerInvariant().Contains(input) ?? false))
-                .OrderBy(x => trackedIds.Contains(x.Id) ? 1 : 0) // untracked first
-                .ThenByDescending(x => x.Id)
+                .OrderByDescending(x => x.Id)
                 .Take(25)
                 .Select(x =>
                 {
-                    var tracked = trackedIds.Contains(x.Id) ? " ✓" : "";
-                    var label = $"#{x.Id}{(x.Type != null ? $" [{x.Type}]" : "")}{(x.Title != null ? $" — {x.Title}" : "")}{tracked}";
+                    var label = $"#{x.Id}{(x.Type != null ? $" [{x.Type}]" : "")}{(x.Title != null ? $" — {x.Title}" : "")}";
                     if (label.Length > 100) label = label[..100];
                     return new AutocompleteResult(label, (long)x.Id);
                 })
