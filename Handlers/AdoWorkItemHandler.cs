@@ -426,8 +426,16 @@ public class AdoWorkItemHandler
         if (_adoApi == null) return "ADO API not configured (set ADO_ORG_URL, ADO_PROJECT, ADO_PAT).";
         if (!TryGetChannel(out var channelId)) return "No ticket channel configured.";
 
-        if (_workItemMap.Get(id) != null)
+        if (_workItemMap.Get(id) is { } existing)
+        {
+            if (existing.ThreadId.HasValue)
+                return $"Ticket #{id} is already tracked — <#{existing.ThreadId.Value}>";
+            if (existing.MessageId != 0 &&
+                ulong.TryParse(_config["Discord:GuildId"], out var gid) &&
+                ulong.TryParse(_config["Discord:TicketChannelId"], out var cid))
+                return $"Ticket #{id} is already tracked — https://discord.com/channels/{gid}/{cid}/{existing.MessageId}";
             return $"Ticket #{id} is already being tracked.";
+        }
 
         var items = await _adoApi.GetWorkItemsAsync([id], ct);
         if (items.Count == 0) return $"Ticket #{id} not found in ADO.";
