@@ -438,7 +438,7 @@ public class AdoWorkItemHandler
             WorkItemType:     item.WorkItemType,
             State:            item.State,
             AreaPath:         item.AreaPath,
-            Description:      null,
+            Description:      item.Description,
             AssignedToEmail:  assignedEmail,
             AssignedToDiscord: !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
             CreatedByEmail:   null,
@@ -470,7 +470,7 @@ public class AdoWorkItemHandler
         }
 
         var embed = BuildBaseEmbed(wi, color);
-        AddStandardFields(embed, wi, showDescription: false);
+        AddStandardFields(embed, wi, showDescription: true);
 
         var wiLock = _wiLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
         await wiLock.WaitAsync(ct);

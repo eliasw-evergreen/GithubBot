@@ -13,7 +13,8 @@ public record AdoWorkItem(
     string? AreaPath,
     string? Url,
     int? Priority = null,
-    double? Size = null);
+    double? Size = null,
+    string? Description = null);
 
 public class AdoApiService
 {
@@ -74,7 +75,7 @@ public class AdoApiService
         foreach (var batch in idList.Chunk(200))
         {
             var joined = string.Join(',', batch);
-            var fields = "System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.AreaPath,Microsoft.VSTS.Common.Priority,Microsoft.VSTS.Scheduling.StoryPoints,Microsoft.VSTS.Scheduling.Effort";
+            var fields = "System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.AreaPath,System.Description,Microsoft.VSTS.Common.Priority,Microsoft.VSTS.Scheduling.StoryPoints,Microsoft.VSTS.Scheduling.Effort";
             var url = $"{_orgUrl}/_apis/wit/workitems?ids={joined}&fields={fields}&api-version=7.1";
             var response = await _http.GetAsync(url, ct);
 
@@ -101,7 +102,8 @@ public class AdoApiService
                     AreaPath:     Str(f, "System.AreaPath"),
                     Url:          el.TryGetProperty("url", out var u) ? u.GetString() : null,
                     Priority:     Num(f, "Microsoft.VSTS.Common.Priority"),
-                    Size:         NumDouble(f, "Microsoft.VSTS.Scheduling.StoryPoints") ?? NumDouble(f, "Microsoft.VSTS.Scheduling.Effort")));
+                    Size:         NumDouble(f, "Microsoft.VSTS.Scheduling.StoryPoints") ?? NumDouble(f, "Microsoft.VSTS.Scheduling.Effort"),
+                    Description:  Str(f, "System.Description")));
             }
         }
         return results;
