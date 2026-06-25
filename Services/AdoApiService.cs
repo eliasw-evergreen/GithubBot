@@ -152,8 +152,6 @@ public class AdoApiService
     }
 
     private List<(int Id, string? Title, string? Type)>? _summaryCache;
-    private DateTime _summaryCacheTime;
-    private static readonly TimeSpan SummaryCacheTtl = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Returns a lightweight list of work item IDs, titles, and types for autocomplete.
@@ -161,8 +159,7 @@ public class AdoApiService
     /// </summary>
     public async Task<List<(int Id, string? Title, string? Type)>> GetWorkItemSummariesAsync(CancellationToken ct = default)
     {
-        if (_summaryCache != null && DateTime.UtcNow - _summaryCacheTime < SummaryCacheTtl)
-            return _summaryCache;
+        if (_summaryCache != null) return _summaryCache;
 
         var wiql = "SELECT [System.Id] FROM WorkItems WHERE [System.State] NOT IN ('Removed') ORDER BY [System.ChangedDate] DESC";
         var ids = await RunWiqlAsync(wiql, ct);
@@ -190,7 +187,6 @@ public class AdoApiService
         }
 
         _summaryCache = results;
-        _summaryCacheTime = DateTime.UtcNow;
         return results;
     }
 
@@ -203,8 +199,7 @@ public class AdoApiService
     /// </summary>
     public List<(int Id, string? Title, string? Type)> GetCachedSummaries()
     {
-        if (_summaryCache == null || DateTime.UtcNow - _summaryCacheTime >= SummaryCacheTtl)
-            _ = RefreshSummariesAsync();
+        if (_summaryCache == null) _ = RefreshSummariesAsync();
         return _summaryCache ?? [];
     }
 
