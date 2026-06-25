@@ -168,8 +168,12 @@ public class DiscordBotService : IHostedService
             var comments = await _gitHub.GetPullRequestCommentsAsync(repoFullName, prNumber, ct);
             var reviews  = await _gitHub.GetPullRequestReviewsAsync(repoFullName, prNumber, ct);
 
+            // Normalize state to lowercase (REST API returns uppercase, webhook uses lowercase)
+            foreach (var r in reviews) r.State = r.State.ToLowerInvariant();
+
             var meaningfulReviews = reviews
-                .Where(r => !string.IsNullOrWhiteSpace(r.Body) && !string.Equals(r.State, "pending", StringComparison.OrdinalIgnoreCase))
+                .Where(r => r.State != "pending" &&
+                            (!string.IsNullOrWhiteSpace(r.Body) || r.State is "approved" or "changes_requested"))
                 .ToList();
 
             if (comments.Count == 0 && meaningfulReviews.Count == 0) return;
