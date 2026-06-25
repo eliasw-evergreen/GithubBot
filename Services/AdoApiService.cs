@@ -151,6 +151,41 @@ public class AdoApiService
         return await GetWorkItemsAsync(ids, ct);
     }
 
+    private List<string>? _areaPathCache;
+
+    /// <summary>
+    /// Returns all area paths in the project, flattened. Results are cached for the lifetime of the service.
+    /// </summary>
+    public async Task<List<string>> GetAreaPathsAsync(CancellationToken ct = default)
+    {
+        if (_areaPathCache != null) return _areaPathCache;
+
+        var url = $"{_orgUrl}/{Uri.EscapeDataString(_project)}/_apis/wit/classificationnodes/areas?$depth=20&api-version=7.1";
+        var response = await _http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("[ADO API] GetAreaPaths failed: {Status}", response.StatusCode);
+            return [];
+        }
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var paths = new List<string>();
+        FlattenAreaNode(doc.RootElement, "", paths);
+        _areaPathCache = paths;
+        return paths;
+    }
+
+    private static void FlattenAreaNode(JsonElement node, string prefix, List<string> results)
+    {
+        var name = node.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+        var path = string.IsNullOrEmpty(prefix) ? name : $"{prefix}\\{name}";
+        if (!string.IsNullOrEmpty(path)) results.Add(path);
+
+        if (node.TryGetProperty("children", out var children))
+            foreach (var child in children.EnumerateArray())
+                FlattenAreaNode(child, path, results);
+    }
+
     public string BuildWorkItemUrl(int id)
         => $"{_orgUrl}/{Uri.EscapeDataString(_project)}/_workitems/edit/{id}";
 

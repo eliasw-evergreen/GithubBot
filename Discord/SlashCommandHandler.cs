@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v13";
+    private const string CommandsVersion = "v14";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -141,7 +141,7 @@ public class SlashCommandHandler
                                   new ApplicationCommandOptionChoiceProperties { Name = "3 – Medium",   Value = 3L },
                                   new ApplicationCommandOptionChoiceProperties { Name = "4 – Low",      Value = 4L }])
                     .AddOption("max-size", ApplicationCommandOptionType.Integer, "Max story points / effort to include", isRequired: false)
-                    .AddOption("area-path", ApplicationCommandOptionType.String, "Filter by area path (includes sub-paths)", isRequired: false)
+                    .AddOption("area-path", ApplicationCommandOptionType.String, "Filter by area path (includes sub-paths)", isRequired: false, isAutocomplete: true)
                     .AddOption("type", ApplicationCommandOptionType.String, "Work item type (Bug, Task, User Story…)", isRequired: false, isAutocomplete: true)
                     .AddOption("state", ApplicationCommandOptionType.String, "Work item state (Active, New…)", isRequired: false, isAutocomplete: true)
                     .AddOption("created-after", ApplicationCommandOptionType.String, "Only show tickets created after (e.g. 7d, 30d, 90d, 1y)", isRequired: false, isAutocomplete: true)
@@ -285,6 +285,12 @@ public class SlashCommandHandler
                 .Take(25)
                 .Select(s => new AutocompleteResult(s, s))
                 .ToList(),
+
+                "area-path" when _adoApi != null => (await _adoApi.GetAreaPathsAsync())
+                    .Where(p => string.IsNullOrEmpty(input) || p.ToLowerInvariant().Contains(input))
+                    .Take(25)
+                    .Select(p => new AutocompleteResult(p, p))
+                    .ToList(),
 
                 "created-after" => new[]
                 {
