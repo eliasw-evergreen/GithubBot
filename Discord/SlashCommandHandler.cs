@@ -18,7 +18,7 @@ public class SlashCommandHandler
     private readonly ConfigUiTokenService _configTokens;
     private readonly WorkItemMapService _workItemMap;
     private readonly AdoApiService? _adoApi;
-    private readonly AdoWorkItemHandler _adoHandler;
+    private readonly IServiceProvider _services;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -33,7 +33,7 @@ public class SlashCommandHandler
         RouletteService roulette,
         ConfigUiTokenService configTokens,
         WorkItemMapService workItemMap,
-        AdoWorkItemHandler adoHandler,
+        IServiceProvider services,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger,
         AdoApiService? adoApi = null)
@@ -46,7 +46,7 @@ public class SlashCommandHandler
         _roulette = roulette;
         _configTokens = configTokens;
         _workItemMap = workItemMap;
-        _adoHandler = adoHandler;
+        _services = services;
         _adoApi = adoApi;
         _config = config;
         _logger = logger;
@@ -509,7 +509,7 @@ public class SlashCommandHandler
             await command.ModifyOriginalResponseAsync(m => m.Content = "Invalid ticket ID.");
             return;
         }
-        var result = await _adoHandler.TrackWorkItemAsync(id);
+        var result = await _services.GetRequiredService<AdoWorkItemHandler>().TrackWorkItemAsync(id);
         await command.ModifyOriginalResponseAsync(m => m.Content = result);
     }
 
