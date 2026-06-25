@@ -373,28 +373,45 @@ public class AdoWorkItemHandler
             }
         }
 
-        // Nothing found — post a stub and create a thread from it
-        _logger.LogInformation("[ADO] No existing message for work item #{Id}, creating stub", wi.Id);
-        var (color, emoji) = TypeEmoji(wi.WorkItemType);
-        var stubEmbed = new global::Discord.EmbedBuilder()
-            .WithTitle($"[#{wi.Id}] {emoji} {wi.WorkItemType ?? "Work Item"}{(wi.Title != null ? $": {wi.Title}" : "")}")
-            .WithColor(color)
-            .WithUrl(wi.Url)
-            .WithDescription("Activity was received for this work item before it was tracked.")
-            .Build();
+        // Nothing found — try to fetch full details from ADO API, fall back to stub
+        _logger.LogInformation("[ADO] No existing message for work item #{Id}, creating embed", wi.Id);
+        global::Discord.Embed initialEmbed;
+        WorkItemInfo embedWi = wi;
+        if (_adoApi != null)
+        {
+            var fetched = await _adoApi.GetWorkItemsAsync([wi.Id], ct);
+            if (fetched.Count > 0)
+            {
+                var item = fetched[0];
+                var assignedEmail = ExtractEmail(item.AssignedTo);
+                embedWi = wi with
+                {
+                    Title          = item.Title ?? wi.Title,
+                    WorkItemType   = item.WorkItemType ?? wi.WorkItemType,
+                    State          = item.State,
+                    AreaPath       = item.AreaPath,
+                    AssignedToEmail   = assignedEmail,
+                    AssignedToDiscord = !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
+                    Url            = _adoApi.BuildWorkItemUrl(wi.Id),
+                };
+            }
+        }
+        var embedBuilder = BuildBaseEmbed(embedWi, embedWi.Color);
+        AddStandardFields(embedBuilder, embedWi, showDescription: false);
+        initialEmbed = embedBuilder.Build();
 
-        var stub = await _discord.SendMessageAsync(channelId, null, stubEmbed, ct);
+        var stub = await _discord.SendMessageAsync(channelId, null, initialEmbed, ct);
         if (stub != null)
         {
             var stubThreadId = await _discord.CreateThreadAsync(channelId, stub.Id,
-                $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
+                $"#{embedWi.Id} — {embedWi.Title ?? embedWi.WorkItemType ?? "Work Item"}", ct);
             _workItemMap.Set(wi.Id, new WorkItemMapEntry
             {
                 MessageId       = stub.Id,
                 ThreadId        = stubThreadId != 0 ? stubThreadId : null,
-                Title           = wi.Title,
-                WorkItemType    = wi.WorkItemType,
-                AssignedToEmail = wi.AssignedToEmail,
+                Title           = embedWi.Title,
+                WorkItemType    = embedWi.WorkItemType,
+                AssignedToEmail = embedWi.AssignedToEmail,
             });
             return stubThreadId != 0 ? stubThreadId : channelId;
         }
