@@ -1,6 +1,7 @@
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
+using GithubBot.Handlers;
 using GithubBot.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,6 +18,7 @@ public class SlashCommandHandler
     private readonly ConfigUiTokenService _configTokens;
     private readonly WorkItemMapService _workItemMap;
     private readonly AdoApiService? _adoApi;
+    private readonly AdoWorkItemHandler _adoHandler;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -31,6 +33,7 @@ public class SlashCommandHandler
         RouletteService roulette,
         ConfigUiTokenService configTokens,
         WorkItemMapService workItemMap,
+        AdoWorkItemHandler adoHandler,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger,
         AdoApiService? adoApi = null)
@@ -43,6 +46,7 @@ public class SlashCommandHandler
         _roulette = roulette;
         _configTokens = configTokens;
         _workItemMap = workItemMap;
+        _adoHandler = adoHandler;
         _adoApi = adoApi;
         _config = config;
         _logger = logger;
@@ -51,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v10";
+    private const string CommandsVersion = "v11";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -120,6 +124,12 @@ public class SlashCommandHandler
                     .WithName("listmappings")
                     .WithDescription("List Discord ↔ GitHub/DevOps mappings")
                     .AddOption("user", ApplicationCommandOptionType.User, "Show mappings for a specific user (omit for all)", isRequired: false)
+                    .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("trackticket")
+                    .WithDescription("Fetch a ticket from ADO and start tracking it in Discord")
+                    .AddOption("id", ApplicationCommandOptionType.Integer, "Work item ID", isRequired: true)
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -205,6 +215,9 @@ public class SlashCommandHandler
                 break;
             case "unassigned":
                 await HandleUnassigned(command);
+                break;
+            case "trackticket":
+                await HandleTrackTicket(command);
                 break;
         }
     }
@@ -406,6 +419,19 @@ public class SlashCommandHandler
                 .WithDescription(string.Join('\n', lines))
                 .Build()]);
         }
+    }
+
+    private async Task HandleTrackTicket(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+        var id = Convert.ToInt32(command.Data.Options.FirstOrDefault(o => o.Name == "id")?.Value ?? 0L);
+        if (id <= 0)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Invalid ticket ID.");
+            return;
+        }
+        var result = await _adoHandler.TrackWorkItemAsync(id);
+        await command.ModifyOriginalResponseAsync(m => m.Content = result);
     }
 
     private async Task HandleUnassigned(SocketSlashCommand command)

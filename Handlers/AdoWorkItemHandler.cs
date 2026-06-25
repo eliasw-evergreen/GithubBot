@@ -12,6 +12,7 @@ public class AdoWorkItemHandler
     private readonly UserMapService _userMap;
     private readonly WorkItemMapService _workItemMap;
     private readonly ScoreService _scores;
+    private readonly AdoApiService? _adoApi;
     private readonly IConfiguration _config;
     private readonly ILogger<AdoWorkItemHandler> _logger;
 
@@ -24,12 +25,14 @@ public class AdoWorkItemHandler
         WorkItemMapService workItemMap,
         ScoreService scores,
         IConfiguration config,
-        ILogger<AdoWorkItemHandler> logger)
+        ILogger<AdoWorkItemHandler> logger,
+        AdoApiService? adoApi = null)
     {
         _discord = discord;
         _userMap = userMap;
         _workItemMap = workItemMap;
         _scores = scores;
+        _adoApi = adoApi;
         _config = config;
         _logger = logger;
     }
@@ -399,6 +402,69 @@ public class AdoWorkItemHandler
         return channelId;
     }
 
+    // ── /trackticket ─────────────────────────────────────────────────────────
+
+    public async Task<string> TrackWorkItemAsync(int id, CancellationToken ct = default)
+    {
+        if (_adoApi == null) return "ADO API not configured (set ADO_ORG_URL, ADO_PROJECT, ADO_PAT).";
+        if (!TryGetChannel(out var channelId)) return "No ticket channel configured.";
+
+        if (_workItemMap.Get(id) != null)
+            return $"Ticket #{id} is already being tracked.";
+
+        var items = await _adoApi.GetWorkItemsAsync([id], ct);
+        if (items.Count == 0) return $"Ticket #{id} not found in ADO.";
+
+        var item = items[0];
+        var (color, emoji) = TypeEmoji(item.WorkItemType);
+        var adoUrl = _adoApi.BuildWorkItemUrl(id);
+
+        var assignedEmail = ExtractEmail(item.AssignedTo);
+        var assignedDiscord = !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null;
+        var createdByEmail = (string?)null; // not returned by batch fetch field list
+
+        var wi = new WorkItemInfo(
+            Id:              id,
+            Title:           item.Title,
+            WorkItemType:    item.WorkItemType,
+            State:           item.State,
+            AreaPath:        item.AreaPath,
+            Description:     null,
+            AssignedToEmail: assignedEmail,
+            AssignedToDiscord: assignedDiscord,
+            CreatedByEmail:  createdByEmail,
+            ChangedByEmail:  null,
+            Url:             adoUrl,
+            Color:           color);
+
+        var embed = BuildBaseEmbed(wi, "✨ Work Item Created", color);
+        AddStandardFields(embed, wi, showDescription: false);
+
+        var wiLock = _wiLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+        await wiLock.WaitAsync(ct);
+        try
+        {
+            var msg = await _discord.SendMessageAsync(channelId, null, embed.Build(), ct);
+            if (msg == null) return "Failed to post embed to ticket channel.";
+
+            var threadId = await _discord.CreateThreadAsync(channelId, msg.Id,
+                $"#{id} — {item.Title ?? item.WorkItemType ?? "Work Item"}", ct);
+
+            _workItemMap.Set(id, new WorkItemMapEntry
+            {
+                MessageId       = msg.Id,
+                ThreadId        = threadId != 0 ? threadId : null,
+                Title           = item.Title,
+                WorkItemType    = item.WorkItemType,
+                AssignedToEmail = assignedEmail,
+            });
+        }
+        finally { wiLock.Release(); }
+
+        _logger.LogInformation("[ADO] Manually tracked work item #{Id}", id);
+        return $"✅ Ticket #{id} is now tracked.";
+    }
+
     // ── Shared helpers ───────────────────────────────────────────────────────
 
     private record WorkItemInfo(
@@ -549,6 +615,19 @@ public class AdoWorkItemHandler
     private static string? Str(JsonElement fields, string key)
         => fields.TryGetProperty(key, out var el) && el.ValueKind == JsonValueKind.String
             ? el.GetString() : null;
+
+    private static string? ExtractEmail(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var s = value.Trim();
+        var lastSpace = s.LastIndexOf(' ');
+        if (lastSpace >= 0)
+        {
+            var tail = s[(lastSpace + 1)..].Trim().Trim('<', '>');
+            if (tail.Contains('@')) return tail;
+        }
+        return s.Trim('<', '>').Contains('@') ? s.Trim('<', '>') : null;
+    }
 
     private static string? Email(JsonElement fields, string key)
     {

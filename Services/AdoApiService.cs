@@ -118,6 +118,9 @@ public class AdoApiService
         return await GetWorkItemsAsync(ids, ct);
     }
 
+    public string BuildWorkItemUrl(int id)
+        => $"{_orgUrl}/{Uri.EscapeDataString(_project)}/_workitems/edit/{id}";
+
     private static string? Str(JsonElement el, string key)
         => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 }
