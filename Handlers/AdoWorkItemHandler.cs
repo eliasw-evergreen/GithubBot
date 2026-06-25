@@ -44,7 +44,7 @@ public class AdoWorkItemHandler
         if (!TryGetChannel(out var channelId)) return;
         if (!TryParseWorkItem(payload, out var wi)) return;
 
-        var embed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
+        var embed = BuildBaseEmbed(wi, wi.Color);
         AddStandardFields(embed, wi, showDescription: true);
 
         _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
@@ -197,7 +197,7 @@ public class AdoWorkItemHandler
         if (stored != null)
         {
             // wi has the full current state from resource.revision.fields — rebuild the embed from it
-            var updatedEmbed = BuildBaseEmbed(wi, "✨ Work Item Created", wi.Color);
+            var updatedEmbed = BuildBaseEmbed(wi, wi.Color);
             AddStandardFields(updatedEmbed, wi, showDescription: true);
             await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
 
@@ -437,7 +437,7 @@ public class AdoWorkItemHandler
             Url:             adoUrl,
             Color:           color);
 
-        var embed = BuildBaseEmbed(wi, "✨ Work Item Created", color);
+        var embed = BuildBaseEmbed(wi, color);
         AddStandardFields(embed, wi, showDescription: false);
 
         var wiLock = _wiLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
@@ -540,11 +540,11 @@ public class AdoWorkItemHandler
         return true;
     }
 
-    private EmbedBuilder BuildBaseEmbed(WorkItemInfo wi, string eventTitle, Color color)
+    private EmbedBuilder BuildBaseEmbed(WorkItemInfo wi, Color color)
     {
         var emoji = TypeEmoji(wi.WorkItemType).emoji;
         return new EmbedBuilder()
-            .WithTitle($"[#{wi.Id}] {eventTitle} — {emoji} {wi.WorkItemType}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithTitle($"[#{wi.Id}] {emoji} {wi.WorkItemType}{(wi.Title != null ? $": {wi.Title}" : "")}")
             .WithColor(color)
             .WithUrl(wi.Url);
     }
