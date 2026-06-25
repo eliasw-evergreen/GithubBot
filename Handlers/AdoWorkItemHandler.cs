@@ -15,6 +15,9 @@ public class AdoWorkItemHandler
     private readonly IConfiguration _config;
     private readonly ILogger<AdoWorkItemHandler> _logger;
 
+    // Prevents concurrent handlers for the same work item from racing to create duplicate stubs/threads
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, SemaphoreSlim> _wiLocks = new();
+
     public AdoWorkItemHandler(
         DiscordBotService discord,
         UserMapService userMap,
@@ -181,8 +184,11 @@ public class AdoWorkItemHandler
 
         _logger.LogInformation("[ADO] Work item updated #{Id}", wi.Id);
 
-        // Resolve thread first — this populates workItemMap for previously untracked tickets
-        var target = await ResolveThreadAsync(channelId, wi, ct);
+        var wiLock = _wiLocks.GetOrAdd(wi.Id, _ => new SemaphoreSlim(1, 1));
+        await wiLock.WaitAsync(ct);
+        ulong target;
+        try { target = await ResolveThreadAsync(channelId, wi, ct); }
+        finally { wiLock.Release(); }
 
         var stored = _workItemMap.Get(wi.Id);
         if (stored != null)
@@ -257,7 +263,13 @@ public class AdoWorkItemHandler
 
         var wi = new WorkItemInfo(workItemId, title, workItemType, null, null, null, null, null, null, null,
             BuildWorkItemUrl(payload, workItemId), Color.Default);
-        var target = await ResolveThreadAsync(channelId, wi, ct);
+
+        var wiLock = _wiLocks.GetOrAdd(workItemId, _ => new SemaphoreSlim(1, 1));
+        await wiLock.WaitAsync(ct);
+        ulong target;
+        try { target = await ResolveThreadAsync(channelId, wi, ct); }
+        finally { wiLock.Release(); }
+
         await _discord.SendMessageAsync(target, mentionContent, embed.Build(), ct);
     }
 
