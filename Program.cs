@@ -58,6 +58,9 @@ var envMap = new Dictionary<string, string?>
     ["PublicHost"] = Env.GetString("PUBLIC_HOST"),
     ["Discord:TicketChannelId"] = Env.GetString("DISCORD_TICKET_CHANNEL_ID"),
     ["AzureDevOps:WebhookSecret"] = Env.GetString("ADO_WEBHOOK_SECRET"),
+    ["AzureDevOps:OrgUrl"]        = Env.GetString("ADO_ORG_URL"),
+    ["AzureDevOps:Project"]       = Env.GetString("ADO_PROJECT"),
+    ["AzureDevOps:Pat"]           = Env.GetString("ADO_PAT"),
 };
 
 builder.Configuration
@@ -81,6 +84,15 @@ builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulet
 builder.Services.AddSingleton(new WorkItemMapService(Path.Combine(dataPath, "workitemmap.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
 builder.Services.AddSingleton<GithubBot.Handlers.AdoWorkItemHandler>();
+
+var adoOrgUrl = builder.Configuration["AzureDevOps:OrgUrl"];
+var adoProject = builder.Configuration["AzureDevOps:Project"];
+var adoPat     = builder.Configuration["AzureDevOps:Pat"];
+if (!string.IsNullOrEmpty(adoOrgUrl) && !string.IsNullOrEmpty(adoProject) && !string.IsNullOrEmpty(adoPat))
+{
+    var adoLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<AdoApiService>();
+    builder.Services.AddSingleton(new AdoApiService(adoOrgUrl, adoProject, adoPat, adoLogger));
+}
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(o =>
 {

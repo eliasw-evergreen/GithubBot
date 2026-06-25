@@ -16,6 +16,7 @@ public class SlashCommandHandler
     private readonly RouletteService _roulette;
     private readonly ConfigUiTokenService _configTokens;
     private readonly WorkItemMapService _workItemMap;
+    private readonly AdoApiService? _adoApi;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -31,7 +32,8 @@ public class SlashCommandHandler
         ConfigUiTokenService configTokens,
         WorkItemMapService workItemMap,
         IConfiguration config,
-        ILogger<SlashCommandHandler> logger)
+        ILogger<SlashCommandHandler> logger,
+        AdoApiService? adoApi = null)
     {
         _client = client;
         _userMap = userMap;
@@ -41,6 +43,7 @@ public class SlashCommandHandler
         _roulette = roulette;
         _configTokens = configTokens;
         _workItemMap = workItemMap;
+        _adoApi = adoApi;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -407,41 +410,75 @@ public class SlashCommandHandler
 
     private async Task HandleUnassigned(SocketSlashCommand command)
     {
-        var unassigned = _workItemMap.GetAll()
-            .Where(kv => string.IsNullOrEmpty(kv.Value.AssignedToEmail))
-            .OrderBy(kv => int.TryParse(kv.Key, out var n) ? n : int.MaxValue)
-            .ToList();
-
-        if (unassigned.Count == 0)
-        {
-            await command.RespondAsync("No unassigned tracked tickets.", ephemeral: true);
-            return;
-        }
+        await command.DeferAsync(ephemeral: true);
 
         var ticketChannelId = ulong.TryParse(_config["Discord:TicketChannelId"], out var tcid) ? tcid : _channelId;
-        var lines = unassigned.Select(kv =>
-        {
-            var id = kv.Key;
-            var e = kv.Value;
-            var guildId = (command.Channel as SocketGuildChannel)?.Guild.Id;
-            var threadLink = e.ThreadId.HasValue
-                ? $"<#{e.ThreadId.Value}>"
-                : e.MessageId != 0 && guildId.HasValue ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{e.MessageId}" : $"#{id}";
-            var type = string.IsNullOrEmpty(e.WorkItemType) ? "" : $" [{e.WorkItemType}]";
-            var title = string.IsNullOrEmpty(e.Title) ? "" : $" — {e.Title}";
-            return $"**#{id}**{type}{title} {threadLink}";
-        });
+        var guildId = (command.Channel as SocketGuildChannel)?.Guild.Id;
 
-        var body = string.Join("\n", lines);
-        if (body.Length > 1900) body = body[..1900] + "\n…";
+        string body;
+        int count;
+
+        if (_adoApi != null)
+        {
+            var items = await _adoApi.GetUnassignedWorkItemsAsync();
+            count = items.Count;
+            if (count == 0)
+            {
+                await command.ModifyOriginalResponseAsync(m => m.Content = "No unassigned active tickets.");
+                return;
+            }
+
+            var lines = items.Select(wi =>
+            {
+                var tracked = _workItemMap.Get(wi.Id);
+                var threadLink = tracked?.ThreadId.HasValue == true
+                    ? $"<#{tracked.ThreadId.Value}>"
+                    : tracked?.MessageId != 0 && guildId.HasValue
+                        ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{tracked!.MessageId}"
+                        : null;
+                var type = string.IsNullOrEmpty(wi.WorkItemType) ? "" : $" [{wi.WorkItemType}]";
+                var title = string.IsNullOrEmpty(wi.Title) ? "" : $" — {wi.Title}";
+                var link = threadLink != null ? $" {threadLink}" : "";
+                return $"**#{wi.Id}**{type}{title}{link}";
+            });
+            body = string.Join("\n", lines);
+        }
+        else
+        {
+            // Fallback: local map only (tickets seen since last deploy)
+            var unassigned = _workItemMap.GetAll()
+                .Where(kv => string.IsNullOrEmpty(kv.Value.AssignedToEmail))
+                .OrderBy(kv => int.TryParse(kv.Key, out var n) ? n : int.MaxValue)
+                .ToList();
+            count = unassigned.Count;
+            if (count == 0)
+            {
+                await command.ModifyOriginalResponseAsync(m => m.Content = "No unassigned tracked tickets.");
+                return;
+            }
+            var lines = unassigned.Select(kv =>
+            {
+                var e = kv.Value;
+                var threadLink = e.ThreadId.HasValue
+                    ? $"<#{e.ThreadId.Value}>"
+                    : e.MessageId != 0 && guildId.HasValue ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{e.MessageId}" : null;
+                var type = string.IsNullOrEmpty(e.WorkItemType) ? "" : $" [{e.WorkItemType}]";
+                var title = string.IsNullOrEmpty(e.Title) ? "" : $" — {e.Title}";
+                var link = threadLink != null ? $" {threadLink}" : "";
+                return $"**#{kv.Key}**{type}{title}{link}";
+            });
+            body = string.Join("\n", lines) + "\n\n*⚠️ ADO API not configured — showing locally tracked tickets only.*";
+        }
+
+        if (body.Length > 3900) body = body[..3900] + "\n…";
 
         var embed = new EmbedBuilder()
-            .WithTitle($"🎫 Unassigned Tickets ({unassigned.Count})")
+            .WithTitle($"🎫 Unassigned Tickets ({count})")
             .WithDescription(body)
             .WithColor(Color.Orange)
             .Build();
 
-        await command.RespondAsync(embed: embed, ephemeral: true);
+        await command.ModifyOriginalResponseAsync(m => { m.Content = ""; m.Embed = embed; });
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)
