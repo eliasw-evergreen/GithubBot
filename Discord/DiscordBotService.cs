@@ -165,8 +165,9 @@ public class DiscordBotService : IHostedService
 
         try
         {
-            var comments = await _gitHub.GetPullRequestCommentsAsync(repoFullName, prNumber, ct);
-            var reviews  = await _gitHub.GetPullRequestReviewsAsync(repoFullName, prNumber, ct);
+            var comments        = await _gitHub.GetPullRequestCommentsAsync(repoFullName, prNumber, ct);
+            var reviewComments  = await _gitHub.GetPullRequestReviewCommentsAsync(repoFullName, prNumber, ct);
+            var reviews         = await _gitHub.GetPullRequestReviewsAsync(repoFullName, prNumber, ct);
 
             // Normalize state to lowercase (REST API returns uppercase, webhook uses lowercase)
             foreach (var r in reviews) r.State = r.State.ToLowerInvariant();
@@ -176,13 +177,15 @@ public class DiscordBotService : IHostedService
                             (!string.IsNullOrWhiteSpace(r.Body) || r.State is "approved" or "changes_requested"))
                 .ToList();
 
-            if (comments.Count == 0 && meaningfulReviews.Count == 0) return;
+            if (comments.Count == 0 && reviewComments.Count == 0 && meaningfulReviews.Count == 0) return;
 
-            var items = new List<(DateTime At, object Item)>();
+            var items = new List<(DateTime At, object Item, bool IsReviewComment)>();
             foreach (var c in comments)
-                items.Add((c.CreatedAt ?? DateTime.MinValue, c));
+                items.Add((c.CreatedAt ?? DateTime.MinValue, c, false));
+            foreach (var c in reviewComments)
+                items.Add((c.CreatedAt ?? DateTime.MinValue, c, true));
             foreach (var r in meaningfulReviews)
-                items.Add((r.SubmittedAt ?? DateTime.MinValue, r));
+                items.Add((r.SubmittedAt ?? DateTime.MinValue, r, false));
             items.Sort((a, b) => a.At.CompareTo(b.At));
 
             // Minimal models for the embed builders
@@ -208,11 +211,11 @@ public class DiscordBotService : IHostedService
 
             _logger.LogInformation("[Backfill] Posting {Count} historical item(s) into thread {ThreadId} for PR #{Pr}", items.Count, threadId, prNumber);
 
-            foreach (var (_, item) in items)
+            foreach (var (_, item, isReviewComment) in items)
             {
                 global::Discord.Embed embed;
                 if (item is Models.IssueComment comment)
-                    embed = EmbedBuilders.CommentEmbed(comment, pr, repo, false, _userMap, commentReaction);
+                    embed = EmbedBuilders.CommentEmbed(comment, pr, repo, isReviewComment, _userMap, commentReaction);
                 else if (item is Models.Review review)
                     embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap, approvedReaction, changesReaction);
                 else continue;
