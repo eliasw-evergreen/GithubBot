@@ -70,6 +70,8 @@ public class SlashCommandHandler
         if (!forceRegister && _prefs.GetCommandsVersion() == CommandsVersion)
         {
             _logger.LogInformation("Slash commands already at {Version}, skipping registration", CommandsVersion);
+            if (_adoApi != null)
+                _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
             return;
         }
 
@@ -177,6 +179,10 @@ public class SlashCommandHandler
                 });
             _prefs.SetCommandsVersion(CommandsVersion);
             _logger.LogInformation("Slash commands registered ({Version})", CommandsVersion);
+
+        // Pre-warm the ADO work item summary cache so autocomplete is ready immediately
+        if (_adoApi != null)
+            _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
         }
         catch (Exception ex)
         {
@@ -273,7 +279,7 @@ public class SlashCommandHandler
 
         if (interaction.Data.CommandName == "trackticket" && focused.Name == "id" && _adoApi != null)
         {
-            var summaries = await _adoApi.GetWorkItemSummariesAsync();
+            var summaries = _adoApi.GetCachedSummaries();
             var trackedIds = _workItemMap.GetAll().Keys
                 .Select(k => int.TryParse(k, out var n) ? n : 0)
                 .ToHashSet();

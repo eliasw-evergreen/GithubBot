@@ -196,6 +196,27 @@ public class AdoApiService
 
     public void InvalidateSummaryCache() => _summaryCache = null;
 
+    /// <summary>
+    /// Returns cached summaries immediately (empty list if cache is cold).
+    /// Triggers a background refresh if the cache is missing or stale.
+    /// Safe to call from autocomplete handlers where latency is &lt;3 s.
+    /// </summary>
+    public List<(int Id, string? Title, string? Type)> GetCachedSummaries()
+    {
+        if (_summaryCache == null || DateTime.UtcNow - _summaryCacheTime >= SummaryCacheTtl)
+            _ = RefreshSummariesAsync();
+        return _summaryCache ?? [];
+    }
+
+    private Task? _refreshTask;
+    private async Task RefreshSummariesAsync()
+    {
+        if (_refreshTask != null && !_refreshTask.IsCompleted) return;
+        _refreshTask = GetWorkItemSummariesAsync();
+        try { await _refreshTask; }
+        catch (Exception ex) { _logger.LogWarning(ex, "[ADO API] Background summary refresh failed"); }
+    }
+
     private List<string>? _areaPathCache;
 
     /// <summary>
