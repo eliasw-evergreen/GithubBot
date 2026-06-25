@@ -11,7 +11,9 @@ public record AdoWorkItem(
     string? State,
     string? AssignedTo,
     string? AreaPath,
-    string? Url);
+    string? Url,
+    int? Priority = null,
+    double? Size = null);
 
 public class AdoApiService
 {
@@ -72,7 +74,7 @@ public class AdoApiService
         foreach (var batch in idList.Chunk(200))
         {
             var joined = string.Join(',', batch);
-            var fields = "System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.AreaPath";
+            var fields = "System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.AreaPath,Microsoft.VSTS.Common.Priority,Microsoft.VSTS.Scheduling.StoryPoints,Microsoft.VSTS.Scheduling.Effort";
             var url = $"{_orgUrl}/_apis/wit/workitems?ids={joined}&fields={fields}&api-version=7.1";
             var response = await _http.GetAsync(url, ct);
 
@@ -97,23 +99,54 @@ public class AdoApiService
                     State:        Str(f, "System.State"),
                     AssignedTo:   Str(f, "System.AssignedTo"),
                     AreaPath:     Str(f, "System.AreaPath"),
-                    Url:          el.TryGetProperty("url", out var u) ? u.GetString() : null));
+                    Url:          el.TryGetProperty("url", out var u) ? u.GetString() : null,
+                    Priority:     Num(f, "Microsoft.VSTS.Common.Priority"),
+                    Size:         NumDouble(f, "Microsoft.VSTS.Scheduling.StoryPoints") ?? NumDouble(f, "Microsoft.VSTS.Scheduling.Effort")));
             }
         }
         return results;
     }
 
     /// <summary>
-    /// Returns all active unassigned work items in the project.
+    /// Returns active unassigned work items in the project, with optional filters.
     /// </summary>
-    public async Task<List<AdoWorkItem>> GetUnassignedWorkItemsAsync(CancellationToken ct = default)
+    public async Task<List<AdoWorkItem>> GetUnassignedWorkItemsAsync(
+        int? minPriority = null,
+        double? maxSize = null,
+        string? areaPath = null,
+        string? type = null,
+        string? state = null,
+        DateTime? createdAfter = null,
+        string? orderBy = null,
+        CancellationToken ct = default)
     {
-        var wiql = """
-            SELECT [System.Id] FROM WorkItems
-            WHERE [System.AssignedTo] = ''
-            AND [System.State] NOT IN ('Closed', 'Resolved', 'Done', 'Removed')
-            ORDER BY [System.CreatedDate] DESC
-            """;
+        var conditions = new List<string> { "[System.AssignedTo] = ''" };
+
+        if (string.IsNullOrEmpty(state))
+            conditions.Add("[System.State] NOT IN ('Closed', 'Resolved', 'Done', 'Removed')");
+        else
+            conditions.Add($"[System.State] = '{state.Replace("'", "''")}'");
+
+        if (minPriority.HasValue)
+            conditions.Add($"[Microsoft.VSTS.Common.Priority] <= {minPriority.Value}");
+        if (maxSize.HasValue)
+            conditions.Add($"([Microsoft.VSTS.Scheduling.StoryPoints] <= {maxSize.Value} OR [Microsoft.VSTS.Scheduling.Effort] <= {maxSize.Value})");
+        if (!string.IsNullOrWhiteSpace(areaPath))
+            conditions.Add($"[System.AreaPath] UNDER '{areaPath.Replace("'", "''")}'");
+        if (!string.IsNullOrWhiteSpace(type))
+            conditions.Add($"[System.WorkItemType] = '{type.Replace("'", "''")}'");
+        if (createdAfter.HasValue)
+            conditions.Add($"[System.CreatedDate] >= '{createdAfter.Value:yyyy-MM-ddTHH:mm:ssZ}'");
+
+        var order = orderBy switch
+        {
+            "priority" => "[Microsoft.VSTS.Common.Priority] ASC",
+            "size"     => "[Microsoft.VSTS.Scheduling.StoryPoints] ASC",
+            "id"       => "[System.Id] ASC",
+            _          => "[System.CreatedDate] DESC",
+        };
+
+        var wiql = $"SELECT [System.Id] FROM WorkItems WHERE {string.Join(" AND ", conditions)} ORDER BY {order}";
         var ids = await RunWiqlAsync(wiql, ct);
         return await GetWorkItemsAsync(ids, ct);
     }
@@ -123,4 +156,10 @@ public class AdoApiService
 
     private static string? Str(JsonElement el, string key)
         => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static int? Num(JsonElement el, string key)
+        => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+
+    private static double? NumDouble(JsonElement el, string key)
+        => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
 }

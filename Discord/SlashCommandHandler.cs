@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v11";
+    private const string CommandsVersion = "v13";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -134,7 +134,22 @@ public class SlashCommandHandler
 
                 new SlashCommandBuilder()
                     .WithName("unassigned")
-                    .WithDescription("List tracked ADO tickets with no assignee")
+                    .WithDescription("List ADO tickets with no assignee")
+                    .AddOption("min-priority", ApplicationCommandOptionType.Integer, "Only show tickets with this priority or higher (1=Critical, 4=Low)", isRequired: false,
+                        choices: [new ApplicationCommandOptionChoiceProperties { Name = "1 – Critical", Value = 1L },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "2 – High",     Value = 2L },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "3 – Medium",   Value = 3L },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "4 – Low",      Value = 4L }])
+                    .AddOption("max-size", ApplicationCommandOptionType.Integer, "Max story points / effort to include", isRequired: false)
+                    .AddOption("area-path", ApplicationCommandOptionType.String, "Filter by area path (includes sub-paths)", isRequired: false)
+                    .AddOption("type", ApplicationCommandOptionType.String, "Work item type (Bug, Task, User Story…)", isRequired: false, isAutocomplete: true)
+                    .AddOption("state", ApplicationCommandOptionType.String, "Work item state (Active, New…)", isRequired: false, isAutocomplete: true)
+                    .AddOption("created-after", ApplicationCommandOptionType.String, "Only show tickets created after (e.g. 7d, 30d, 90d, 1y)", isRequired: false, isAutocomplete: true)
+                    .AddOption("order-by", ApplicationCommandOptionType.String, "Sort order", isRequired: false,
+                        choices: [new ApplicationCommandOptionChoiceProperties { Name = "Priority",     Value = "priority" },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "Size",         Value = "size" },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "Created Date", Value = "created" },
+                                  new ApplicationCommandOptionChoiceProperties { Name = "ID",           Value = "id" }])
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -224,27 +239,72 @@ public class SlashCommandHandler
 
     public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
     {
-        if (interaction.Data.CommandName != "prroulette") return;
         var focused = interaction.Data.Options.FirstOrDefault(o => o.Focused);
-        if (focused?.Name != "pr") return;
-
+        if (focused == null) return;
         var input = (focused.Value as string ?? "").ToLowerInvariant();
 
-        var choices = _prMap.GetAll()
-            .Where(kvp => kvp.Value.ClosedAt == null && kvp.Value.PrNumber != null)
-            .Select(kvp => new
-            {
-                NodeId = kvp.Key,
-                Label = $"#{kvp.Value.PrNumber} {kvp.Value.PrTitle ?? ""}".Trim(),
-                kvp.Value.PrNumber
-            })
-            .Where(x => string.IsNullOrEmpty(input) || x.Label.ToLowerInvariant().Contains(input))
-            .OrderBy(x => x.PrNumber)
-            .Take(25)
-            .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
-            .ToList();
+        if (interaction.Data.CommandName == "prroulette" && focused.Name == "pr")
+        {
+            var choices = _prMap.GetAll()
+                .Where(kvp => kvp.Value.ClosedAt == null && kvp.Value.PrNumber != null)
+                .Select(kvp => new
+                {
+                    NodeId = kvp.Key,
+                    Label = $"#{kvp.Value.PrNumber} {kvp.Value.PrTitle ?? ""}".Trim(),
+                    kvp.Value.PrNumber
+                })
+                .Where(x => string.IsNullOrEmpty(input) || x.Label.ToLowerInvariant().Contains(input))
+                .OrderBy(x => x.PrNumber)
+                .Take(25)
+                .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
+                .ToList();
+            await interaction.RespondAsync(choices);
+            return;
+        }
 
-        await interaction.RespondAsync(choices);
+        if (interaction.Data.CommandName == "unassigned")
+        {
+            List<AutocompleteResult> suggestions = focused.Name switch
+            {
+                "type" => new[]
+                {
+                    "Bug", "Task", "User Story", "Feature", "Epic",
+                    "Test Case", "Test Plan", "Test Suite", "Issue"
+                }
+                .Where(s => string.IsNullOrEmpty(input) || s.ToLowerInvariant().Contains(input))
+                .Take(25)
+                .Select(s => new AutocompleteResult(s, s))
+                .ToList(),
+
+                "state" => new[]
+                {
+                    "New", "Active", "Committed", "In Progress", "Resolved",
+                    "Closed", "Done", "Removed", "To Do", "In Review"
+                }
+                .Where(s => string.IsNullOrEmpty(input) || s.ToLowerInvariant().Contains(input))
+                .Take(25)
+                .Select(s => new AutocompleteResult(s, s))
+                .ToList(),
+
+                "created-after" => new[]
+                {
+                    ("7d",   "Last 7 days"),
+                    ("14d",  "Last 14 days"),
+                    ("30d",  "Last 30 days"),
+                    ("60d",  "Last 60 days"),
+                    ("90d",  "Last 90 days"),
+                    ("180d", "Last 180 days"),
+                    ("1y",   "Last year"),
+                }
+                .Where(s => string.IsNullOrEmpty(input) || s.Item1.Contains(input) || s.Item2.ToLowerInvariant().Contains(input))
+                .Take(25)
+                .Select(s => new AutocompleteResult(s.Item2, s.Item1))
+                .ToList(),
+
+                _ => []
+            };
+            await interaction.RespondAsync(suggestions);
+        }
     }
 
     private async Task HandleConfigUi(SocketSlashCommand command)
@@ -421,6 +481,19 @@ public class SlashCommandHandler
         }
     }
 
+    private static DateTime? ParseRelativeDate(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        raw = raw.Trim().ToLowerInvariant();
+        if (raw.EndsWith('y') && int.TryParse(raw[..^1], out var years))
+            return DateTime.UtcNow.AddYears(-years);
+        if (raw.EndsWith('d') && int.TryParse(raw[..^1], out var days))
+            return DateTime.UtcNow.AddDays(-days);
+        if (DateTime.TryParse(raw, out var dt))
+            return dt.ToUniversalTime();
+        return null;
+    }
+
     private async Task HandleTrackTicket(SocketSlashCommand command)
     {
         await command.DeferAsync(ephemeral: true);
@@ -441,12 +514,21 @@ public class SlashCommandHandler
         var ticketChannelId = ulong.TryParse(_config["Discord:TicketChannelId"], out var tcid) ? tcid : _channelId;
         var guildId = (command.Channel as SocketGuildChannel)?.Guild.Id;
 
+        var minPriority  = command.Data.Options.FirstOrDefault(o => o.Name == "min-priority")?.Value is long mp ? (int?)mp : null;
+        var maxSize      = command.Data.Options.FirstOrDefault(o => o.Name == "max-size")?.Value is long ms ? (double?)ms : null;
+        var areaPath     = command.Data.Options.FirstOrDefault(o => o.Name == "area-path")?.Value as string;
+        var type         = command.Data.Options.FirstOrDefault(o => o.Name == "type")?.Value as string;
+        var state        = command.Data.Options.FirstOrDefault(o => o.Name == "state")?.Value as string;
+        var orderBy      = command.Data.Options.FirstOrDefault(o => o.Name == "order-by")?.Value as string;
+        var createdAfterRaw = command.Data.Options.FirstOrDefault(o => o.Name == "created-after")?.Value as string;
+        var createdAfter = ParseRelativeDate(createdAfterRaw);
+
         string body;
         int count;
 
         if (_adoApi != null)
         {
-            var items = await _adoApi.GetUnassignedWorkItemsAsync();
+            var items = await _adoApi.GetUnassignedWorkItemsAsync(minPriority, maxSize, areaPath, type, state, createdAfter, orderBy);
             count = items.Count;
             if (count == 0)
             {
@@ -454,6 +536,7 @@ public class SlashCommandHandler
                 return;
             }
 
+            var priorityLabel = new[] { "", "🔴 Critical", "🟠 High", "🟡 Medium", "🟢 Low" };
             var lines = items.Select(wi =>
             {
                 var tracked = _workItemMap.Get(wi.Id);
@@ -462,10 +545,12 @@ public class SlashCommandHandler
                     : tracked != null && tracked.MessageId != 0 && guildId.HasValue
                         ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{tracked.MessageId}"
                         : null;
-                var type = string.IsNullOrEmpty(wi.WorkItemType) ? "" : $" [{wi.WorkItemType}]";
+                var type  = string.IsNullOrEmpty(wi.WorkItemType) ? "" : $" [{wi.WorkItemType}]";
                 var title = string.IsNullOrEmpty(wi.Title) ? "" : $" — {wi.Title}";
-                var link = threadLink != null ? $" {threadLink}" : "";
-                return $"**#{wi.Id}**{type}{title}{link}";
+                var prio  = wi.Priority is >= 1 and <= 4 ? $" {priorityLabel[wi.Priority.Value]}" : "";
+                var size  = wi.Size.HasValue ? $" `{wi.Size.Value}pts`" : "";
+                var link  = threadLink != null ? $" {threadLink}" : "";
+                return $"**#{wi.Id}**{type}{title}{prio}{size}{link}";
             });
             body = string.Join("\n", lines);
         }
@@ -498,8 +583,17 @@ public class SlashCommandHandler
 
         if (body.Length > 3900) body = body[..3900] + "\n…";
 
+        var filters = new List<string>();
+        if (minPriority.HasValue)          filters.Add($"prio ≤ {minPriority}");
+        if (maxSize.HasValue)              filters.Add($"size ≤ {maxSize}");
+        if (!string.IsNullOrEmpty(areaPath))      filters.Add(areaPath);
+        if (!string.IsNullOrEmpty(type))           filters.Add(type);
+        if (!string.IsNullOrEmpty(state))          filters.Add(state);
+        if (!string.IsNullOrEmpty(createdAfterRaw)) filters.Add($"created {createdAfterRaw}");
+        var filterSuffix = filters.Count > 0 ? $" — {string.Join(", ", filters)}" : "";
+
         var embed = new EmbedBuilder()
-            .WithTitle($"🎫 Unassigned Tickets ({count})")
+            .WithTitle($"🎫 Unassigned Tickets ({count}){filterSuffix}")
             .WithDescription(body)
             .WithColor(Color.Orange)
             .Build();
