@@ -107,18 +107,31 @@ public class AdoWorkItemHandler
                 if (skipFields.Contains(prop.Name)) continue;
                 var oldRaw = prop.Value.TryGetProperty("oldValue", out var ov) ? FormatFieldValue(ov) : null;
                 var newRaw = prop.Value.TryGetProperty("newValue", out var nv) ? FormatFieldValue(nv) : null;
-                if (string.IsNullOrEmpty(newRaw) || oldRaw == newRaw) continue;
+                var bothEmpty = string.IsNullOrEmpty(oldRaw) && string.IsNullOrEmpty(newRaw);
+                var unchanged = !string.IsNullOrEmpty(oldRaw) && oldRaw == newRaw;
+                if (bothEmpty || unchanged) continue;
                 var oldVal = StripHtml(oldRaw);
                 var newVal = StripHtml(newRaw);
                 var label = friendlyNames.TryGetValue(prop.Name, out var fn)
                     ? fn
                     : prop.Name.Contains('.') ? prop.Name[(prop.Name.LastIndexOf('.') + 1)..] : prop.Name;
-                fieldLines.Add((label, oldVal != null ? $"{oldVal} → **{newVal}**" : $"**{newVal}**"));
+                var display = (!string.IsNullOrEmpty(oldVal), !string.IsNullOrEmpty(newVal)) switch {
+                    (true,  true)  => $"{oldVal} → **{newVal}**",
+                    (true,  false) => $"~~{oldVal}~~ *(unassigned)*",
+                    _              => $"**{newVal}**",
+                };
+                fieldLines.Add((label, display));
             }
         }
 
         if (fieldLines.Count == 0)
         {
+            if (changedFields.ValueKind == JsonValueKind.Object)
+                foreach (var prop in changedFields.EnumerateObject())
+                    _logger.LogDebug("[ADO] Skipped field {Field}: old={Old} new={New}",
+                        prop.Name,
+                        prop.Value.TryGetProperty("oldValue", out var dov) ? dov.GetRawText() : "(none)",
+                        prop.Value.TryGetProperty("newValue", out var dnv) ? dnv.GetRawText() : "(none)");
             _logger.LogInformation("[ADO] Work item updated #{Id} — no interesting fields changed, skipping", wi.Id);
             return;
         }
@@ -137,15 +150,17 @@ public class AdoWorkItemHandler
             embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
         }
 
-        // Only ping if AssignedTo actually changed to a new person (oldValue → newValue differ)
+        // Ping assignee if AssignedTo changed to a different (non-empty) person
         string? ping = null;
         if (changedFields.ValueKind == JsonValueKind.Object &&
             changedFields.TryGetProperty("System.AssignedTo", out var atDiff) &&
-            atDiff.TryGetProperty("newValue", out var atNew) &&
-            atDiff.TryGetProperty("oldValue", out var atOld) &&
-            FormatFieldValue(atNew) != FormatFieldValue(atOld) &&
-            wi.AssignedToDiscord != null)
-            ping = $"<@{wi.AssignedToDiscord}>";
+            atDiff.TryGetProperty("newValue", out var atNew))
+        {
+            var atNewVal = FormatFieldValue(atNew);
+            var atOldVal = atDiff.TryGetProperty("oldValue", out var atOld) ? FormatFieldValue(atOld) : null;
+            if (!string.IsNullOrEmpty(atNewVal) && atNewVal != atOldVal && wi.AssignedToDiscord != null)
+                ping = $"<@{wi.AssignedToDiscord}>";
+        }
 
         // Award resolved points to assignee if state changed to a done state
         if (changedFields.ValueKind == JsonValueKind.Object &&
