@@ -497,6 +497,32 @@ public class AdoWorkItemHandler
         return $"✅ Ticket #{id} is now tracked.";
     }
 
+    // ── /untrackticket ───────────────────────────────────────────────────────
+
+    public async Task<string> UntrackWorkItemAsync(int id, CancellationToken ct = default)
+    {
+        if (!TryGetChannel(out var channelId)) return "No ticket channel configured.";
+
+        var stored = _workItemMap.Get(id);
+        if (stored == null) return $"Ticket #{id} is not being tracked.";
+
+        if (stored.ThreadId is ulong threadId)
+        {
+            try { await _discord.ArchiveThreadAsync(threadId, ct); }
+            catch (Exception ex) { _logger.LogWarning(ex, "[ADO] Could not archive thread {ThreadId} for #{Id}", threadId, id); }
+        }
+
+        if (stored.MessageId != 0)
+        {
+            try { await _discord.DeleteMessageAsync(channelId, stored.MessageId); }
+            catch (Exception ex) { _logger.LogWarning(ex, "[ADO] Could not delete message {MsgId} for #{Id}", stored.MessageId, id); }
+        }
+
+        _workItemMap.Remove(id);
+        _logger.LogInformation("[ADO] Untracked work item #{Id}", id);
+        return $"✅ Ticket #{id} untracked — message deleted and thread archived.";
+    }
+
     // ── Shared helpers ───────────────────────────────────────────────────────
 
     private record WorkItemInfo(

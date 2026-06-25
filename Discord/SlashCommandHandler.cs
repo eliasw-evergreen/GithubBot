@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v14";
+    private const string CommandsVersion = "v15";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -153,6 +153,12 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("untrackticket")
+                    .WithDescription("Stop tracking a ticket — deletes the embed and archives the thread")
+                    .AddOption("id", ApplicationCommandOptionType.Integer, "Work item ID to untrack", isRequired: true, isAutocomplete: true)
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("map-user")
                     .WithDescription("Map a Discord user to a GitHub or DevOps identity")
                     .AddOption("username", ApplicationCommandOptionType.String, "GitHub username or DevOps email/display name", isRequired: true)
@@ -234,6 +240,9 @@ public class SlashCommandHandler
             case "trackticket":
                 await HandleTrackTicket(command);
                 break;
+            case "untrackticket":
+                await HandleUntrackTicket(command);
+                break;
         }
     }
 
@@ -257,6 +266,25 @@ public class SlashCommandHandler
                 .OrderBy(x => x.PrNumber)
                 .Take(25)
                 .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
+                .ToList();
+            await interaction.RespondAsync(choices);
+            return;
+        }
+
+        if (interaction.Data.CommandName == "untrackticket" && focused.Name == "id")
+        {
+            var choices = _workItemMap.GetAll()
+                .Select(kv => new { Id = kv.Key, kv.Value.Title, kv.Value.WorkItemType })
+                .Where(x => string.IsNullOrEmpty(input) || x.Id.Contains(input) ||
+                            (x.Title?.ToLowerInvariant().Contains(input) ?? false))
+                .OrderBy(x => int.TryParse(x.Id, out var n) ? n : int.MaxValue)
+                .Take(25)
+                .Select(x =>
+                {
+                    var label = $"#{x.Id}{(x.WorkItemType != null ? $" [{x.WorkItemType}]" : "")}{(x.Title != null ? $" — {x.Title}" : "")}";
+                    if (label.Length > 100) label = label[..100];
+                    return new AutocompleteResult(label, long.TryParse(x.Id, out var v) ? (object)v : x.Id);
+                })
                 .ToList();
             await interaction.RespondAsync(choices);
             return;
@@ -510,6 +538,19 @@ public class SlashCommandHandler
             return;
         }
         var result = await _services.GetRequiredService<AdoWorkItemHandler>().TrackWorkItemAsync(id);
+        await command.ModifyOriginalResponseAsync(m => m.Content = result);
+    }
+
+    private async Task HandleUntrackTicket(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+        var id = Convert.ToInt32(command.Data.Options.FirstOrDefault(o => o.Name == "id")?.Value ?? 0L);
+        if (id <= 0)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Invalid ticket ID.");
+            return;
+        }
+        var result = await _services.GetRequiredService<AdoWorkItemHandler>().UntrackWorkItemAsync(id);
         await command.ModifyOriginalResponseAsync(m => m.Content = result);
     }
 
