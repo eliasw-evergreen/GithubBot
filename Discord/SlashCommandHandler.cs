@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v16";
+    private const string CommandsVersion = "v17";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -155,6 +155,11 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("givemeapr")
+                    .WithDescription("Assign yourself to review a random open PR you haven't authored or commented on")
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("untrackticket")
                     .WithDescription("Stop tracking a ticket — deletes the embed and archives the thread")
                     .AddOption("id", ApplicationCommandOptionType.Integer, "Work item ID to untrack", isRequired: true, isAutocomplete: true)
@@ -242,6 +247,9 @@ public class SlashCommandHandler
                 break;
             case "unassigned":
                 await HandleUnassigned(command);
+                break;
+            case "givemeapr":
+                await HandleGiveMeAPr(command);
                 break;
             case "trackticket":
                 await HandleTrackTicket(command);
@@ -572,6 +580,100 @@ public class SlashCommandHandler
         }
         var result = await _services.GetRequiredService<AdoWorkItemHandler>().TrackWorkItemAsync(id);
         await command.ModifyOriginalResponseAsync(m => m.Content = result);
+    }
+
+    private async Task HandleGiveMeAPr(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        var discordId = command.User.Id.ToString();
+        var userEntry = _userMap.GetAll().GetValueOrDefault(discordId);
+        var ghLogins = userEntry?.Gh ?? [];
+
+        // All open PRs
+        var openPrs = _prMap.GetAll()
+            .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0)
+            .ToList();
+
+        if (openPrs.Count == 0)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No open PRs found.");
+            return;
+        }
+
+        // Exclude PRs authored by this user
+        var notAuthored = openPrs
+            .Where(kv => string.IsNullOrEmpty(kv.Value.AuthorLogin) ||
+                         !ghLogins.Any(l => l.Equals(kv.Value.AuthorLogin, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        if (notAuthored.Count == 0)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "All open PRs were authored by you — nothing to review!");
+            return;
+        }
+
+        // Try to find one the user hasn't commented in
+        var notCommented = new List<KeyValuePair<string, PrMapEntry>>();
+        foreach (var kv in notAuthored)
+        {
+            if (kv.Value.ThreadId is not ulong threadId) { notCommented.Add(kv); continue; }
+
+            var thread = _client.GetChannel(threadId) as IMessageChannel;
+            if (thread == null) { notCommented.Add(kv); continue; }
+
+            try
+            {
+                var messages = await thread.GetMessagesAsync(100).FlattenAsync();
+                var botId = _client.CurrentUser!.Id;
+                var mention = $"<@{command.User.Id}>";
+                var hasCommented = messages.Any(m =>
+                    m.Author.Id == command.User.Id ||
+                    (m.Author.Id == botId &&
+                     m.Embeds.Any(e => e.Fields.Any(f => f.Name == "By" && f.Value.Contains(mention)))));
+                if (!hasCommented) notCommented.Add(kv);
+            }
+            catch
+            {
+                notCommented.Add(kv); // can't check — include it
+            }
+        }
+
+        var pool = notCommented.Count > 0 ? notCommented : notAuthored;
+        var fallbackNote = notCommented.Count == 0 ? "\n*You've already commented on all open PRs you didn't author — picking one anyway.*" : "";
+
+        var rng = new Random();
+        var picked = pool[rng.Next(pool.Count)];
+        var entry = picked.Value;
+
+        // Post the ping in the thread
+        if (entry.ThreadId is ulong prThreadId)
+        {
+            var thread = _client.GetChannel(prThreadId) as IMessageChannel;
+            if (thread == null)
+            {
+                try
+                {
+                    var restThread = await _client.Rest.GetChannelAsync(prThreadId) as global::Discord.Rest.RestThreadChannel;
+                    if (restThread?.IsArchived == true)
+                        await restThread.ModifyAsync(p => p.Archived = false);
+                    thread = _client.GetChannel(prThreadId) as IMessageChannel ?? restThread as IMessageChannel;
+                }
+                catch { }
+            }
+
+            if (thread != null)
+            {
+                var prLabel = entry.PrNumber != null ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}" : "a PR";
+                await thread.SendMessageAsync($"<@{command.User.Id}> You've been assigned to review **{prLabel}**! 🎯");
+                await command.ModifyOriginalResponseAsync(m => m.Content = $"Assigned you to {thread.Name}!{fallbackNote}");
+                return;
+            }
+        }
+
+        // No accessible thread — just tell them
+        var label = entry.PrNumber != null ? $"PR #{entry.PrNumber}{(entry.PrTitle != null ? $" — {entry.PrTitle}" : "")}" : "a PR";
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"You should review **{label}**!{fallbackNote}");
     }
 
     private async Task HandleUntrackTicket(SocketSlashCommand command)
