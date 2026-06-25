@@ -10,6 +10,7 @@ public class PrMapEntry
     public int? PrNumber { get; set; }
     public string? PrTitle { get; set; }
     public string? AuthorLogin { get; set; }
+    public bool IsDraft { get; set; }
 }
 
 

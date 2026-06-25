@@ -448,12 +448,12 @@ public class SlashCommandHandler
             await command.DeferAsync(ephemeral: true);
 
             var openPrs = _prMap.GetAll()
-                .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0)
+                .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0 && !IsDraftPr(kv.Value))
                 .ToList();
 
             if (openPrs.Count == 0)
             {
-                await command.ModifyOriginalResponseAsync(m => m.Content = "No open PRs found.");
+                await command.ModifyOriginalResponseAsync(m => m.Content = "No open non-draft PRs found.");
                 return;
             }
 
@@ -494,6 +494,9 @@ public class SlashCommandHandler
                 $"🎰 Assigned {count} reviewer{(count == 1 ? "" : "s")}{roleNote} to {posted} open PR{(posted == 1 ? "" : "s")}, balanced by load.");
         }
     }
+
+    private static bool IsDraftPr(PrMapEntry entry)
+        => entry.IsDraft || (entry.PrTitle != null && entry.PrTitle.Contains("draft", StringComparison.OrdinalIgnoreCase));
 
     private List<SocketGuildUser> ExcludeAuthor(List<SocketGuildUser> pool, PrMapEntry entry)
     {
@@ -653,14 +656,14 @@ public class SlashCommandHandler
         var userEntry = _userMap.GetAll().GetValueOrDefault(discordId);
         var ghLogins = userEntry?.Gh ?? [];
 
-        // All open PRs
+        // All open non-draft PRs
         var openPrs = _prMap.GetAll()
-            .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0)
+            .Where(kv => kv.Value.ClosedAt == null && kv.Value.MessageId != 0 && !IsDraftPr(kv.Value))
             .ToList();
 
         if (openPrs.Count == 0)
         {
-            await command.ModifyOriginalResponseAsync(m => m.Content = "No open PRs found.");
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No open non-draft PRs found.");
             return;
         }
 

@@ -146,9 +146,9 @@ public class PullRequestHandler : IGitHubEventHandler
         {
             var originalMsg = await _discord.GetMessageAsync(channel.Id, stored!.MessageId);
             if (originalMsg != null)
-            {
                 await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, embed);
-            }
+            stored!.IsDraft = action == "converted_to_draft";
+            _prMap.Set(pr.NodeId, stored);
             return;
         }
 
@@ -158,8 +158,7 @@ public class PullRequestHandler : IGitHubEventHandler
             AwardPrPoints(pr, ScoreCategory.PrOpened);
             var threadId = await _discord.CreateThreadAsync(channel.Id, msg.Id,
                 $"PR #{pr.Number} — {pr.Title}", ct);
-            _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId, PrNumber = pr.Number, PrTitle = pr.Title, AuthorLogin = pr.User?.Login });
-
+            _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId, PrNumber = pr.Number, PrTitle = pr.Title, AuthorLogin = pr.User?.Login, IsDraft = pr.Draft == true });
         }
     }
 
