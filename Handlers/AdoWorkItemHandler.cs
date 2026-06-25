@@ -283,7 +283,7 @@ public class AdoWorkItemHandler
         if (!TryGetChannel(out var channelId)) return;
         if (!TryParseWorkItem(payload, out var wi)) return;
 
-        var embed = BuildBaseEmbed(wi, "🗑️ Work Item Deleted", Color.Red);
+        var embed = BuildBaseEmbed(wi, Color.Red, "🗑️ Deleted");
         AddStandardFields(embed, wi, showDescription: false);
 
         _logger.LogInformation("[ADO] Work item deleted #{Id}", wi.Id);
@@ -540,11 +540,12 @@ public class AdoWorkItemHandler
         return true;
     }
 
-    private EmbedBuilder BuildBaseEmbed(WorkItemInfo wi, Color color)
+    private EmbedBuilder BuildBaseEmbed(WorkItemInfo wi, Color color, string? eventTitle = null)
     {
         var emoji = TypeEmoji(wi.WorkItemType).emoji;
+        var prefix = string.IsNullOrEmpty(eventTitle) ? "" : $"{eventTitle} — ";
         return new EmbedBuilder()
-            .WithTitle($"[#{wi.Id}] {emoji} {wi.WorkItemType}{(wi.Title != null ? $": {wi.Title}" : "")}")
+            .WithTitle($"[#{wi.Id}] {prefix}{emoji} {wi.WorkItemType}{(wi.Title != null ? $": {wi.Title}" : "")}")
             .WithColor(color)
             .WithUrl(wi.Url);
     }
