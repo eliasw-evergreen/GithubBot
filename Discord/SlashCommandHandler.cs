@@ -905,10 +905,10 @@ public class SlashCommandHandler
             .AddField("Total", $"**{entry.Total}** pts", inline: true)
             .AddField("​", "​", inline: true)
             .AddField("​", "​", inline: true)
-            .AddField("PR Opened",      $"{entry.PrOpened} pts ({entry.PrOpened / ScoreService.PointsPrOpened} PR{(entry.PrOpened / ScoreService.PointsPrOpened == 1 ? "" : "s")})", inline: true)
-            .AddField("PR Merged",      $"{entry.PrMerged} pts ({entry.PrMerged / ScoreService.PointsPrMerged} PR{(entry.PrMerged / ScoreService.PointsPrMerged == 1 ? "" : "s")})", inline: true)
-            .AddField("Reviews",        $"{entry.ReviewSubmitted} pts ({entry.ReviewSubmitted / ScoreService.PointsReview} review{(entry.ReviewSubmitted / ScoreService.PointsReview == 1 ? "" : "s")})", inline: true)
-            .AddField("Comments",       $"{entry.Comments} pts ({entry.Comments / ScoreService.PointsComment} comment{(entry.Comments / ScoreService.PointsComment == 1 ? "" : "s")})", inline: true)
+            .AddField("PR Opened",      $"{entry.PrOpened} pts ({entry.PrOpened / _scores.PointsPrOpened} PR{(entry.PrOpened / _scores.PointsPrOpened == 1 ? "" : "s")})", inline: true)
+            .AddField("PR Merged",      $"{entry.PrMerged} pts ({entry.PrMerged / _scores.PointsPrMerged} PR{(entry.PrMerged / _scores.PointsPrMerged == 1 ? "" : "s")})", inline: true)
+            .AddField("Reviews",        $"{entry.ReviewSubmitted} pts ({entry.ReviewSubmitted / _scores.PointsReview} review{(entry.ReviewSubmitted / _scores.PointsReview == 1 ? "" : "s")})", inline: true)
+            .AddField("Comments",       $"{entry.Comments} pts ({entry.Comments / _scores.PointsComment} comment{(entry.Comments / _scores.PointsComment == 1 ? "" : "s")})", inline: true)
             .AddField("Ticket Created", $"{entry.TicketCreated} pts", inline: true)
             .AddField("Ticket Resolved",$"{entry.TicketResolved} pts", inline: true)
             .AddField("Ticket Comments",$"{entry.TicketComments} pts", inline: true)
@@ -955,11 +955,11 @@ public class SlashCommandHandler
             {
                 var prefix = i < medals.Length ? medals[i] : $"#{i + 1}";
                 var value = $"{prefix} <@{entry.DiscordId}> — **{entry.Entry.Total} pts**\n" +
-                            $"PRs: {entry.Entry.PrOpened / ScoreService.PointsPrOpened} opened · {entry.Entry.PrMerged / ScoreService.PointsPrMerged} merged · " +
-                            $"Reviews: {entry.Entry.ReviewSubmitted / ScoreService.PointsReview} · Comments: {entry.Entry.Comments / ScoreService.PointsComment}\n" +
-                            $"Tickets: {entry.Entry.TicketCreated / ScoreService.PointsTicketCreated} created · " +
+                            $"PRs: {entry.Entry.PrOpened / _scores.PointsPrOpened} opened · {entry.Entry.PrMerged / _scores.PointsPrMerged} merged · " +
+                            $"Reviews: {entry.Entry.ReviewSubmitted / _scores.PointsReview} · Comments: {entry.Entry.Comments / _scores.PointsComment}\n" +
+                            $"Tickets: {entry.Entry.TicketCreated / _scores.PointsTicketCreated} created · " +
                             $"{entry.Entry.TicketResolved} resolved pts · " +
-                            $"{entry.Entry.TicketComments / ScoreService.PointsTicketComment} ticket comments";
+                            $"{entry.Entry.TicketComments / _scores.PointsTicketComment} ticket comments";
                 embed.AddField("​", value);
             }
 

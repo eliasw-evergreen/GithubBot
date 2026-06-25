@@ -79,7 +79,7 @@ builder.Services.AddSingleton(new PrMapService(Path.Combine(dataPath, "prmap.jso
 builder.Services.AddSingleton(new CommentMapService(Path.Combine(dataPath, "commentmap.json")));
 builder.Services.AddSingleton(new ReviewMapService(Path.Combine(dataPath, "reviewmap.json")));
 builder.Services.AddSingleton(new PreferencesService(Path.Combine(dataPath, "preferences.json")));
-builder.Services.AddSingleton(new ScoreService(Path.Combine(dataPath, "scores.json")));
+builder.Services.AddSingleton(sp => new ScoreService(Path.Combine(dataPath, "scores.json"), sp.GetRequiredService<PreferencesService>()));
 builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulette.json")));
 builder.Services.AddSingleton(new WorkItemMapService(Path.Combine(dataPath, "workitemmap.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
@@ -356,7 +356,11 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
     var map = userMap.GetAll();
     var allScores = scores.GetAll();
     var rouletteExclusions = prefs.GetRouletteExclusions();
-    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines());
+    var pointValues = new Dictionary<string, int>();
+    foreach (var key in new[] { "PrOpened","PrMerged","Review","Comment","TicketCreated","TicketBug","TicketStory","TicketComment" })
+        if (prefs.GetPointValue(key) is int pv) pointValues[key] = pv;
+
+    var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines(), pointValues);
     context.Response.Headers.CacheControl = "no-store";
     return Results.Content(html, "text/html");
 });
@@ -524,6 +528,25 @@ app.MapPost("/config/ui/clearprdescmaxlines", async (HttpContext context, Prefer
 {
     if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
     prefs.SetPrDescMaxLines(null);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/setpointvalue", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var key = form["key"].FirstOrDefault()?.Trim();
+    var raw = form["value"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(key) && int.TryParse(raw, out var v)) prefs.SetPointValue(key, v);
+    return Results.Redirect("/config/ui");
+});
+
+app.MapPost("/config/ui/clearpointvalue", async (HttpContext context, PreferencesService prefs) =>
+{
+    if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+    var form = await context.Request.ReadFormAsync();
+    var key = form["key"].FirstOrDefault()?.Trim();
+    if (!string.IsNullOrEmpty(key)) prefs.ClearPointValue(key);
     return Results.Redirect("/config/ui");
 });
 

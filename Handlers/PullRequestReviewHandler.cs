@@ -91,7 +91,7 @@ public class PullRequestReviewHandler : IGitHubEventHandler
         {
             _scores.Award(reviewerId, ScoreCategory.ReviewSubmitted);
             if (_roulette.TryCollect(pr.NodeId, reviewerId))
-                _scores.AwardBonus(reviewerId, ScoreService.PointsReview);
+                _scores.AwardBonus(reviewerId, _scores.PointsReview);
         }
 
         if (stored != null)

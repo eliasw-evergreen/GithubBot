@@ -20,20 +20,32 @@ public enum ScoreCategory { PrOpened, PrMerged, ReviewSubmitted, Comment, Ticket
 public class ScoreService
 {
     private readonly string _filePath;
+    private readonly PreferencesService _prefs;
     private Dictionary<string, ScoreEntry> _scores = [];
 
-    public const int PointsPrOpened        = 10;
-    public const int PointsPrMerged        = 15;
-    public const int PointsReview          = 10;
-    public const int PointsComment         = 5;
-    public const int PointsTicketCreated   = 10;
-    public const int PointsTicketBug       = 10;
-    public const int PointsTicketStory     = 15;
-    public const int PointsTicketComment   = 5;
+    public const int DefaultPointsPrOpened      = 10;
+    public const int DefaultPointsPrMerged      = 15;
+    public const int DefaultPointsReview        = 10;
+    public const int DefaultPointsComment       = 5;
+    public const int DefaultPointsTicketCreated = 10;
+    public const int DefaultPointsTicketBug     = 10;
+    public const int DefaultPointsTicketStory   = 15;
+    public const int DefaultPointsTicketComment = 5;
 
-    public ScoreService(string filePath)
+    // These remain for display use in /score and /leaderboard-verbose
+    public int PointsPrOpened      => _prefs.ResolvePointValue("PrOpened",      DefaultPointsPrOpened);
+    public int PointsPrMerged      => _prefs.ResolvePointValue("PrMerged",      DefaultPointsPrMerged);
+    public int PointsReview        => _prefs.ResolvePointValue("Review",        DefaultPointsReview);
+    public int PointsComment       => _prefs.ResolvePointValue("Comment",       DefaultPointsComment);
+    public int PointsTicketCreated => _prefs.ResolvePointValue("TicketCreated", DefaultPointsTicketCreated);
+    public int PointsTicketBug     => _prefs.ResolvePointValue("TicketBug",     DefaultPointsTicketBug);
+    public int PointsTicketStory   => _prefs.ResolvePointValue("TicketStory",   DefaultPointsTicketStory);
+    public int PointsTicketComment => _prefs.ResolvePointValue("TicketComment", DefaultPointsTicketComment);
+
+    public ScoreService(string filePath, PreferencesService prefs)
     {
         _filePath = filePath;
+        _prefs = prefs;
         Load();
     }
 
@@ -74,7 +86,7 @@ public class ScoreService
             ScoreCategory.Comment         => PointsComment,
             ScoreCategory.TicketCreated   => PointsTicketCreated,
             ScoreCategory.TicketComment   => PointsTicketComment,
-            _                             => 0,
+            _                             => 0
         };
 
         entry.Total += points;
@@ -105,7 +117,7 @@ public class ScoreService
         var points = workItemType switch
         {
             "User Story" => PointsTicketStory,
-            _            => PointsTicketBug,
+            _            => PointsTicketBug
         };
         if (!_scores.TryGetValue(discordId, out var entry)) entry = new ScoreEntry();
         entry.Total          += points;

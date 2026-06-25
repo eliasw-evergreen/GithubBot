@@ -117,6 +117,17 @@ public class PreferencesService
     public void SetPrDescMaxLines(int? v) { _data.PrDescMaxLines = v; Save(); }
     public int ResolvePrDescMaxLines() => _data.PrDescMaxLines ?? 10;
 
+    // ── Score point values ────────────────────────────────────────────────────
+
+    public int? GetPointValue(string key)
+        => _data.PointValues.TryGetValue(key, out var v) ? v : null;
+
+    public void SetPointValue(string key, int value) { _data.PointValues[key] = value; Save(); }
+    public void ClearPointValue(string key) { _data.PointValues.Remove(key); Save(); }
+
+    public int ResolvePointValue(string key, int defaultValue)
+        => _data.PointValues.TryGetValue(key, out var v) ? v : defaultValue;
+
     // ── Commands version ──────────────────────────────────────────────────────
 
     public string? GetCommandsVersion() => _data.CommandsVersion;
@@ -135,5 +146,6 @@ public class PreferencesService
         public string? ConfigRole { get; set; }
         public string? CommandRole { get; set; }
         public int? PrDescMaxLines { get; set; }
+        public Dictionary<string, int> PointValues { get; set; } = [];
     }
 }

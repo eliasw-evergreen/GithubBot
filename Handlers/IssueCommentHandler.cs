@@ -103,7 +103,7 @@ public class IssueCommentHandler : IGitHubEventHandler
             {
                 _scores.Award(commenterId, ScoreCategory.Comment);
                 if (_roulette.TryCollect(pr.NodeId, commenterId))
-                    _scores.AwardBonus(commenterId, ScoreService.PointsComment);
+                    _scores.AwardBonus(commenterId, _scores.PointsComment);
             }
         }
 

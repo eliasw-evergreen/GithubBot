@@ -26,7 +26,8 @@ public static class ConfigUiHtml
         string configRoleSource,
         string? currentCommandRole,
         string commandRoleSource,
-        int? prDescMaxLines)
+        int? prDescMaxLines,
+        IReadOnlyDictionary<string, int> pointValues)
     {
         var sb = new StringBuilder();
         sb.Append("""
@@ -219,6 +220,37 @@ public static class ConfigUiHtml
                 sb.Append($"""<form method="post" action="/config/ui/clearreaction"><input type="hidden" name="event" value="{r.Key}"><button type="submit" class="btn-sm">Clear</button></form>""");
             sb.Append("</td></tr>");
         }
+        sb.Append("</tbody></table>");
+
+        // ── Score Values ────────────────────────────────────────────────────
+        sb.Append("<h2>Score Values</h2>");
+        sb.Append("<table><thead><tr><th>Action</th><th>Points</th><th>Set</th><th></th></tr></thead><tbody>");
+
+        void ScoreValueRow(string key, string label, int defaultVal)
+        {
+            var current = pointValues.TryGetValue(key, out var v) ? v : (int?)null;
+            var display = current.HasValue ? current.Value.ToString() : $"{defaultVal} (default)";
+            sb.Append($"""
+                <tr><td>{label}</td><td><span class="reaction-val">{display}</span></td><td>
+                <form method="post" action="/config/ui/setpointvalue" class="f">
+                <input type="hidden" name="key" value="{key}">
+                <input type="number" name="value" placeholder="{defaultVal}" style="width:80px" value="{current?.ToString() ?? ""}">
+                <button type="submit" class="btn">Set</button></form></td><td>
+                """);
+            if (current.HasValue)
+                sb.Append($"""<form method="post" action="/config/ui/clearpointvalue"><input type="hidden" name="key" value="{key}"><button type="submit" class="btn-sm">Clear override</button></form>""");
+            sb.Append("</td></tr>");
+        }
+
+        ScoreValueRow("PrOpened",      "PR Opened",               ScoreService.DefaultPointsPrOpened);
+        ScoreValueRow("PrMerged",      "PR Merged",               ScoreService.DefaultPointsPrMerged);
+        ScoreValueRow("Review",        "Review Submitted",        ScoreService.DefaultPointsReview);
+        ScoreValueRow("Comment",       "PR Comment",              ScoreService.DefaultPointsComment);
+        ScoreValueRow("TicketCreated", "Ticket Created",          ScoreService.DefaultPointsTicketCreated);
+        ScoreValueRow("TicketBug",     "Ticket Resolved (Bug)",   ScoreService.DefaultPointsTicketBug);
+        ScoreValueRow("TicketStory",   "Ticket Resolved (Story)", ScoreService.DefaultPointsTicketStory);
+        ScoreValueRow("TicketComment", "Ticket Comment",          ScoreService.DefaultPointsTicketComment);
+
         sb.Append("</tbody></table>");
 
         // ── Score Editor ────────────────────────────────────────────────────
