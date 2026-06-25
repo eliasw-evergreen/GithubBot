@@ -10,6 +10,7 @@ public class DiscordBotService : IHostedService
     private readonly IConfiguration _config;
     private readonly PreferencesService _prefs;
     private readonly UserMapService _userMap;
+    private readonly PrMapService _prMap;
     private readonly SlashCommandHandler _slashHandler;
     private readonly ILogger<DiscordBotService> _logger;
 
@@ -18,6 +19,7 @@ public class DiscordBotService : IHostedService
         IConfiguration config,
         PreferencesService prefs,
         UserMapService userMap,
+        PrMapService prMap,
         SlashCommandHandler slashHandler,
         ILogger<DiscordBotService> logger)
     {
@@ -25,6 +27,7 @@ public class DiscordBotService : IHostedService
         _config = config;
         _prefs = prefs;
         _userMap = userMap;
+        _prMap = prMap;
         _slashHandler = slashHandler;
         _logger = logger;
 
@@ -66,7 +69,47 @@ public class DiscordBotService : IHostedService
     {
         _logger.LogInformation("Logged in as {User}", _client.CurrentUser?.Username ?? "unknown");
         _ = Task.Run(_slashHandler.RegisterAsync);
+        _ = Task.Run(BackfillPrAuthorsAsync);
         return Task.CompletedTask;
+    }
+
+    private async Task BackfillPrAuthorsAsync()
+    {
+        var channelId = ResolveChannelId("pull", "Discord:ChannelId");
+        if (channelId == 0) return;
+
+        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        if (channel == null) return;
+
+        var needsBackfill = _prMap.GetAll()
+            .Where(kv => kv.Value.AuthorLogin == null && kv.Value.MessageId != 0)
+            .ToList();
+
+        if (needsBackfill.Count == 0) return;
+
+        _logger.LogInformation("[Backfill] Scanning {Count} PR messages for author login", needsBackfill.Count);
+        int filled = 0;
+
+        foreach (var (nodeId, entry) in needsBackfill)
+        {
+            try
+            {
+                var msg = await channel.GetMessageAsync(entry.MessageId);
+                var authorName = msg?.Embeds.FirstOrDefault()?.Author?.Name;
+                if (string.IsNullOrEmpty(authorName)) continue;
+
+                entry.AuthorLogin = authorName;
+                _prMap.Set(nodeId, entry);
+                filled++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] Could not fetch message {MsgId} for PR {NodeId}", entry.MessageId, nodeId);
+            }
+        }
+
+        if (filled > 0)
+            _logger.LogInformation("[Backfill] Filled AuthorLogin for {Count} PRs", filled);
     }
 
     public Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
