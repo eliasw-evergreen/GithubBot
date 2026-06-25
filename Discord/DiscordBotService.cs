@@ -1,5 +1,6 @@
 using Discord;
 using Discord.WebSocket;
+using GithubBot.Models;
 using GithubBot.Services;
 
 namespace GithubBot.Discord;
@@ -11,6 +12,7 @@ public class DiscordBotService : IHostedService
     private readonly PreferencesService _prefs;
     private readonly UserMapService _userMap;
     private readonly PrMapService _prMap;
+    private readonly GitHubApiService? _gitHub;
     private readonly SlashCommandHandler _slashHandler;
     private readonly ILogger<DiscordBotService> _logger;
 
@@ -21,13 +23,15 @@ public class DiscordBotService : IHostedService
         UserMapService userMap,
         PrMapService prMap,
         SlashCommandHandler slashHandler,
-        ILogger<DiscordBotService> logger)
+        ILogger<DiscordBotService> logger,
+        GitHubApiService? gitHub = null)
     {
         _client = client;
         _config = config;
         _prefs = prefs;
         _userMap = userMap;
         _prMap = prMap;
+        _gitHub = gitHub;
         _slashHandler = slashHandler;
         _logger = logger;
 
@@ -70,6 +74,7 @@ public class DiscordBotService : IHostedService
         _logger.LogInformation("Logged in as {User}", _client.CurrentUser?.Username ?? "unknown");
         _ = Task.Run(_slashHandler.RegisterAsync);
         _ = Task.Run(BackfillPrAuthorsAsync);
+        _ = Task.Run(BackfillPrDraftStatusAsync);
         return Task.CompletedTask;
     }
 
@@ -110,6 +115,100 @@ public class DiscordBotService : IHostedService
 
         if (filled > 0)
             _logger.LogInformation("[Backfill] Filled AuthorLogin for {Count} PRs", filled);
+    }
+
+    private async Task BackfillPrDraftStatusAsync()
+    {
+        if (_gitHub == null) return;
+
+        // Group open tracked PRs by repo so we can batch per repo
+        var openByRepo = _prMap.GetAll()
+            .Where(kv => kv.Value.ClosedAt == null && !string.IsNullOrEmpty(kv.Value.RepoFullName) && kv.Value.PrNumber != null)
+            .GroupBy(kv => kv.Value.RepoFullName!)
+            .ToList();
+
+        if (openByRepo.Count == 0) return;
+
+        _logger.LogInformation("[Backfill] Syncing draft status for open PRs across {RepoCount} repo(s)", openByRepo.Count);
+        int updated = 0;
+
+        foreach (var repoGroup in openByRepo)
+        {
+            try
+            {
+                var openPrs = await _gitHub.GetOpenPullRequestsAsync(repoGroup.Key);
+                var byNumber = openPrs.ToDictionary(p => p.Number);
+
+                foreach (var (nodeId, entry) in repoGroup)
+                {
+                    if (!byNumber.TryGetValue(entry.PrNumber!.Value, out var ghPr)) continue;
+                    if (entry.IsDraft == ghPr.Draft) continue;
+
+                    entry.IsDraft = ghPr.Draft;
+                    _prMap.Set(nodeId, entry);
+                    updated++;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] Draft status sync failed for repo {Repo}", repoGroup.Key);
+            }
+        }
+
+        if (updated > 0)
+            _logger.LogInformation("[Backfill] Updated draft status for {Count} PR(s)", updated);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _githubPrUrlRegex =
+        new(@"github\.com/([^/]+/[^/]+)/pull/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private async Task<global::Discord.Embed?> FetchPrEmbedAsync(string prHtmlUrl, int prNumber, CancellationToken ct)
+    {
+        if (_gitHub == null) return null;
+
+        var match = _githubPrUrlRegex.Match(prHtmlUrl);
+        if (!match.Success) return null;
+        var repoFullName = match.Groups[1].Value;
+
+        try
+        {
+            var ghPr = await _gitHub.GetPullRequestAsync(repoFullName, prNumber, ct);
+            if (ghPr == null) return null;
+
+            var repoName = repoFullName.Split('/').Last();
+            var pr = new PullRequest
+            {
+                NodeId  = ghPr.NodeId ?? $"gh_{repoFullName.Replace('/', '_')}_{prNumber}",
+                Number  = ghPr.Number,
+                Title   = ghPr.Title ?? $"PR #{prNumber}",
+                HtmlUrl = ghPr.HtmlUrl ?? prHtmlUrl,
+                User    = new GitHubUser { Login = ghPr.UserLogin ?? "unknown" },
+                Draft   = ghPr.Draft,
+                Body    = ghPr.Body,
+                Head    = new Branch { Ref = ghPr.HeadRef ?? "" },
+                Base    = new Branch { Ref = ghPr.BaseRef ?? "" },
+            };
+            var repo = new Repository
+            {
+                FullName = repoFullName,
+                Name     = repoName,
+                HtmlUrl  = $"https://github.com/{repoFullName}",
+            };
+
+            return EmbedBuilders.PrEmbed(pr, repo, "opened", _userMap,
+                openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
+                reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
+                readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
+                convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
+                mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
+                closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
+                descMaxLines:             _prefs.ResolvePrDescMaxLines());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[PrResolve] Failed to fetch PR embed from GitHub API for {Url}", prHtmlUrl);
+            return null;
+        }
     }
 
     public Task<IMessageChannel?> GetChannelAsync(CancellationToken ct = default)
@@ -242,13 +341,16 @@ public class DiscordBotService : IHostedService
         // Not found — post a stub (or caller-supplied embed) and create a thread from it
         _logger.LogInformation("[PrResolve] No existing message found for PR #{PrNumber}, creating stub", prNumber);
 
-        var stub = await textChannel.SendMessageAsync(
-            embed: stubEmbed ?? new EmbedBuilder()
+        var resolvedEmbed = stubEmbed
+            ?? await FetchPrEmbedAsync(prHtmlUrl, prNumber, ct)
+            ?? new EmbedBuilder()
                 .WithTitle($"PR #{prNumber} — {prTitle}")
                 .WithUrl(prHtmlUrl)
                 .WithColor(new Color(0x444466))
                 .WithDescription("Activity was received for this PR before it was tracked.")
-                .Build());
+                .Build();
+
+        var stub = await textChannel.SendMessageAsync(embed: resolvedEmbed);
 
         var newThreadId = await CreateThreadAsync(textChannel.Id, stub.Id, $"PR #{prNumber} — {prTitle}", ct);
 

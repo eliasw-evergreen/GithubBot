@@ -11,6 +11,7 @@ public class PrMapEntry
     public string? PrTitle { get; set; }
     public string? AuthorLogin { get; set; }
     public bool IsDraft { get; set; }
+    public string? RepoFullName { get; set; }
 }
 
 

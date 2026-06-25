@@ -61,6 +61,7 @@ var envMap = new Dictionary<string, string?>
     ["AzureDevOps:OrgUrl"]        = Env.GetString("ADO_ORG_URL"),
     ["AzureDevOps:Project"]       = Env.GetString("ADO_PROJECT"),
     ["AzureDevOps:Pat"]           = Env.GetString("ADO_PAT"),
+    ["GitHub:Pat"]                = Env.GetString("GITHUB_PAT"),
 };
 
 builder.Configuration
@@ -93,6 +94,13 @@ if (!string.IsNullOrEmpty(adoOrgUrl) && !string.IsNullOrEmpty(adoProject) && !st
     var adoLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<AdoApiService>();
     builder.Services.AddSingleton(new AdoApiService(adoOrgUrl, adoProject, adoPat, adoLogger));
 }
+var ghPat = builder.Configuration["GitHub:Pat"];
+if (!string.IsNullOrEmpty(ghPat))
+{
+    var ghLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<GitHubApiService>();
+    builder.Services.AddSingleton(new GitHubApiService(ghPat, ghLogger));
+}
+
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(o =>
 {

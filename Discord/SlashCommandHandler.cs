@@ -18,6 +18,7 @@ public class SlashCommandHandler
     private readonly ConfigUiTokenService _configTokens;
     private readonly WorkItemMapService _workItemMap;
     private readonly AdoApiService? _adoApi;
+    private readonly GitHubApiService? _gitHub;
     private readonly IServiceProvider _services;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
@@ -36,7 +37,8 @@ public class SlashCommandHandler
         IServiceProvider services,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger,
-        AdoApiService? adoApi = null)
+        AdoApiService? adoApi = null,
+        GitHubApiService? gitHub = null)
     {
         _client = client;
         _userMap = userMap;
@@ -48,6 +50,7 @@ public class SlashCommandHandler
         _workItemMap = workItemMap;
         _services = services;
         _adoApi = adoApi;
+        _gitHub = gitHub;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -55,7 +58,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v19";
+    private const string CommandsVersion = "v20";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -72,6 +75,16 @@ public class SlashCommandHandler
             _logger.LogInformation("Slash commands already at {Version}, skipping registration", CommandsVersion);
             if (_adoApi != null)
                 _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
+            if (_gitHub != null)
+            {
+                var repos = _prMap.GetAll().Values
+                    .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
+                    .Select(e => e.RepoFullName!)
+                    .Distinct()
+                    .ToList();
+                if (repos.Count > 0)
+                    _ = Task.Run(() => _gitHub.RefreshPrSummariesAsync(repos));
+            }
             return;
         }
 
@@ -161,6 +174,12 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("trackpr")
+                    .WithDescription("Fetch a PR from GitHub and start tracking it in Discord")
+                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to track (start typing to search)", isRequired: true, isAutocomplete: true)
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("givemeapr")
                     .WithDescription("Assign yourself to review a random open PR you haven't authored or commented on")
                     .Build(),
@@ -191,9 +210,19 @@ public class SlashCommandHandler
             _prefs.SetCommandsVersion(CommandsVersion);
             _logger.LogInformation("Slash commands registered ({Version})", CommandsVersion);
 
-        // Pre-warm the ADO work item summary cache so autocomplete is ready immediately
+        // Pre-warm caches so autocomplete is ready immediately
         if (_adoApi != null)
             _ = Task.Run(() => _adoApi.GetWorkItemSummariesAsync());
+        if (_gitHub != null)
+        {
+            var repos = _prMap.GetAll().Values
+                .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
+                .Select(e => e.RepoFullName!)
+                .Distinct()
+                .ToList();
+            if (repos.Count > 0)
+                _ = Task.Run(() => _gitHub.RefreshPrSummariesAsync(repos));
+        }
         }
         catch (Exception ex)
         {
@@ -257,6 +286,9 @@ public class SlashCommandHandler
             case "untrackpr":
                 await HandleUntrackPr(command);
                 break;
+            case "trackpr":
+                await HandleTrackPr(command);
+                break;
             case "givemeapr":
                 await HandleGiveMeAPr(command);
                 break;
@@ -289,6 +321,40 @@ public class SlashCommandHandler
                 .OrderByDescending(x => x.PrNumber)
                 .Take(25)
                 .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
+                .ToList();
+            await interaction.RespondAsync(choices);
+            return;
+        }
+
+        if (interaction.Data.CommandName == "trackpr" && focused.Name == "pr" && _gitHub != null)
+        {
+            var repos = _prMap.GetAll().Values
+                .Where(e => !string.IsNullOrEmpty(e.RepoFullName))
+                .Select(e => e.RepoFullName!)
+                .Distinct()
+                .ToList();
+            var trackedKeys = _prMap.GetAll()
+                .Where(kv => kv.Value.PrNumber != null && !string.IsNullOrEmpty(kv.Value.RepoFullName))
+                .Select(kv => $"{kv.Value.RepoFullName}|{kv.Value.PrNumber}")
+                .ToHashSet();
+
+            var summaries = _gitHub.GetCachedPrSummaries(repos);
+            var choices = summaries
+                .Where(s => !trackedKeys.Contains($"{s.Repo}|{s.Number}"))
+                .Where(s => string.IsNullOrEmpty(input) ||
+                             s.Number.ToString().Contains(input) ||
+                             (s.Title?.ToLowerInvariant().Contains(input) ?? false) ||
+                             s.Repo.ToLowerInvariant().Contains(input))
+                .OrderBy(s => s.Repo)
+                .ThenBy(s => s.Number)
+                .Take(25)
+                .Select(s =>
+                {
+                    var draftTag = s.Draft ? " [draft]" : "";
+                    var label = $"#{s.Number}{draftTag} — {s.Title ?? "Untitled"} ({s.Repo.Split('/').Last()})";
+                    if (label.Length > 100) label = label[..100];
+                    return new AutocompleteResult(label, $"{s.Repo}|{s.Number}");
+                })
                 .ToList();
             await interaction.RespondAsync(choices);
             return;
@@ -725,6 +791,109 @@ public class SlashCommandHandler
         _prMap.Remove(nodeId);
         var label = entry.PrNumber != null ? $"PR #{entry.PrNumber}" : "PR";
         await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ {label} untracked — message deleted and thread archived.");
+    }
+
+    private async Task HandleTrackPr(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        if (_gitHub == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "GitHub PAT is not configured — cannot fetch PR info.");
+            return;
+        }
+
+        var value = command.Data.Options.FirstOrDefault(o => o.Name == "pr")?.Value as string;
+        if (string.IsNullOrEmpty(value))
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No PR specified.");
+            return;
+        }
+
+        var sep = value.LastIndexOf('|');
+        if (sep < 0 || !int.TryParse(value[(sep + 1)..], out var prNumber))
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Invalid PR selection.");
+            return;
+        }
+        var repoFullName = value[..sep];
+
+        var ghPr = await _gitHub.GetPullRequestAsync(repoFullName, prNumber);
+        if (ghPr == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = $"Could not fetch PR #{prNumber} from {repoFullName}.");
+            return;
+        }
+
+        var repoName = repoFullName.Split('/').Last();
+        var pr = new GithubBot.Models.PullRequest
+        {
+            NodeId   = ghPr.NodeId ?? $"gh_{repoFullName.Replace('/', '_')}_{prNumber}",
+            Number   = ghPr.Number,
+            Title    = ghPr.Title ?? $"PR #{prNumber}",
+            HtmlUrl  = ghPr.HtmlUrl ?? $"https://github.com/{repoFullName}/pull/{prNumber}",
+            User     = new GithubBot.Models.GitHubUser { Login = ghPr.UserLogin ?? "unknown" },
+            Draft    = ghPr.Draft,
+            Body     = ghPr.Body,
+            Head     = new GithubBot.Models.Branch { Ref = ghPr.HeadRef ?? "" },
+            Base     = new GithubBot.Models.Branch { Ref = ghPr.BaseRef ?? "" },
+        };
+        var repo = new GithubBot.Models.Repository
+        {
+            FullName = repoFullName,
+            Name     = repoName,
+            HtmlUrl  = $"https://github.com/{repoFullName}",
+        };
+
+        // Check if already tracked
+        if (_prMap.Get(pr.NodeId) != null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = $"PR #{prNumber} is already being tracked.");
+            return;
+        }
+
+        var discord = _services.GetRequiredService<DiscordBotService>();
+        var channel = await discord.GetChannelAsync();
+        if (channel == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR channel is not configured.");
+            return;
+        }
+
+        var embed = EmbedBuilders.PrEmbed(pr, repo, "opened", _userMap,
+            openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
+            reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
+            readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
+            convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
+            mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
+            closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
+            descMaxLines:             _prefs.ResolvePrDescMaxLines());
+
+        var authorMention = _userMap.GitHubToDiscord(pr.User.Login) is string did
+            ? $"<@{did}>"
+            : $"**{pr.User.Login}**";
+        var msg = await discord.SendMessageAsync(channel.Id, $"{authorMention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed);
+        if (msg == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Failed to post PR embed.");
+            return;
+        }
+
+        var threadId = await discord.CreateThreadAsync(channel.Id, msg.Id, $"PR #{pr.Number} — {pr.Title}");
+        _prMap.Set(pr.NodeId, new PrMapEntry
+        {
+            MessageId    = msg.Id,
+            ThreadId     = threadId != 0 ? threadId : null,
+            PrNumber     = pr.Number,
+            PrTitle      = pr.Title,
+            AuthorLogin  = ghPr.UserLogin,
+            IsDraft      = ghPr.Draft,
+            RepoFullName = repoFullName,
+        });
+
+        _gitHub.InvalidatePrSummaryCache();
+
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ PR #{pr.Number} is now tracked — **{pr.Title}**");
     }
 
     private async Task HandleGiveMeAPr(SocketSlashCommand command)

@@ -158,7 +158,7 @@ public class PullRequestHandler : IGitHubEventHandler
             AwardPrPoints(pr, ScoreCategory.PrOpened);
             var threadId = await _discord.CreateThreadAsync(channel.Id, msg.Id,
                 $"PR #{pr.Number} — {pr.Title}", ct);
-            _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId, PrNumber = pr.Number, PrTitle = pr.Title, AuthorLogin = pr.User?.Login, IsDraft = pr.Draft == true });
+            _prMap.Set(pr.NodeId, new PrMapEntry { MessageId = msg.Id, ThreadId = threadId, PrNumber = pr.Number, PrTitle = pr.Title, AuthorLogin = pr.User?.Login, IsDraft = pr.Draft == true, RepoFullName = repo.FullName });
         }
     }
 
