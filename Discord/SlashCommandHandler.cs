@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v18";
+    private const string CommandsVersion = "v19";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -155,6 +155,12 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("untrackpr")
+                    .WithDescription("Stop tracking a PR — deletes the embed and archives the thread")
+                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to untrack (start typing to search)", isRequired: true, isAutocomplete: true)
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("givemeapr")
                     .WithDescription("Assign yourself to review a random open PR you haven't authored or commented on")
                     .Build(),
@@ -248,6 +254,9 @@ public class SlashCommandHandler
             case "unassigned":
                 await HandleUnassigned(command);
                 break;
+            case "untrackpr":
+                await HandleUntrackPr(command);
+                break;
             case "givemeapr":
                 await HandleGiveMeAPr(command);
                 break;
@@ -265,6 +274,25 @@ public class SlashCommandHandler
         var focused = interaction.Data.Options.FirstOrDefault(o => o.Focused);
         if (focused == null) return;
         var input = (focused.Value as string ?? "").ToLowerInvariant();
+
+        if (interaction.Data.CommandName == "untrackpr" && focused.Name == "pr")
+        {
+            var choices = _prMap.GetAll()
+                .Where(kvp => kvp.Value.PrNumber != null)
+                .Select(kvp => new
+                {
+                    NodeId = kvp.Key,
+                    Label = $"#{kvp.Value.PrNumber} {kvp.Value.PrTitle ?? ""}".Trim(),
+                    kvp.Value.PrNumber
+                })
+                .Where(x => string.IsNullOrEmpty(input) || x.Label.ToLowerInvariant().Contains(input))
+                .OrderByDescending(x => x.PrNumber)
+                .Take(25)
+                .Select(x => new AutocompleteResult(x.Label.Length > 100 ? x.Label[..100] : x.Label, x.NodeId))
+                .ToList();
+            await interaction.RespondAsync(choices);
+            return;
+        }
 
         if (interaction.Data.CommandName == "prroulette" && focused.Name == "pr")
         {
@@ -646,6 +674,57 @@ public class SlashCommandHandler
         }
         var result = await _services.GetRequiredService<AdoWorkItemHandler>().TrackWorkItemAsync(id);
         await command.ModifyOriginalResponseAsync(m => m.Content = result);
+    }
+
+    private async Task HandleUntrackPr(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+        var nodeId = command.Data.Options.FirstOrDefault(o => o.Name == "pr")?.Value as string;
+        if (string.IsNullOrEmpty(nodeId))
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No PR specified.");
+            return;
+        }
+
+        var entry = _prMap.Get(nodeId);
+        if (entry == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR not found in the map.");
+            return;
+        }
+
+        if (entry.ThreadId is ulong threadId)
+        {
+            try
+            {
+                var thread = _client.GetChannel(threadId) as IThreadChannel;
+                if (thread == null)
+                {
+                    var rest = await _client.Rest.GetChannelAsync(threadId) as global::Discord.Rest.RestThreadChannel;
+                    if (rest != null) await rest.ModifyAsync(p => p.Archived = true);
+                }
+                else
+                {
+                    await thread.ModifyAsync(p => p.Archived = true);
+                }
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "[UntrackPR] Could not archive thread {ThreadId}", threadId); }
+        }
+
+        if (entry.MessageId != 0 && _channelId != 0)
+        {
+            try
+            {
+                var channel = _client.GetChannel(_channelId) as IMessageChannel;
+                var msg = channel != null ? await channel.GetMessageAsync(entry.MessageId) as IUserMessage : null;
+                if (msg != null) await msg.DeleteAsync();
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "[UntrackPR] Could not delete message {MsgId}", entry.MessageId); }
+        }
+
+        _prMap.Remove(nodeId);
+        var label = entry.PrNumber != null ? $"PR #{entry.PrNumber}" : "PR";
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ {label} untracked — message deleted and thread archived.");
     }
 
     private async Task HandleGiveMeAPr(SocketSlashCommand command)
