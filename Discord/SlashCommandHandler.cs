@@ -58,7 +58,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v20";
+    private const string CommandsVersion = "v21";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -96,6 +96,11 @@ public class SlashCommandHandler
         {
             var commands = new ApplicationCommandProperties[]
             {
+                new SlashCommandBuilder()
+                    .WithName("help")
+                    .WithDescription("List all available bot commands")
+                    .Build(),
+
                 new SlashCommandBuilder()
                     .WithName("score")
                     .WithDescription("Show your score and stats, or view another user's score")
@@ -248,6 +253,9 @@ public class SlashCommandHandler
 
         switch (command.Data.Name)
         {
+            case "help":
+                await HandleHelp(command);
+                break;
             case "score":
                 await HandleScore(command);
                 break;
@@ -464,6 +472,35 @@ public class SlashCommandHandler
             };
             await interaction.RespondAsync(suggestions);
         }
+    }
+
+    private async Task HandleHelp(SocketSlashCommand command)
+    {
+        var embed = new EmbedBuilder()
+            .WithTitle("Bot Commands")
+            .WithColor(new Color(0x5865F2))
+            .AddField("Pull Requests",
+                "`/trackpr` — Manually track an existing GitHub PR\n" +
+                "`/untrackpr` — Stop tracking a PR, delete embed and archive thread\n" +
+                "`/prroulette` — Assign reviewers to a PR, or balance across all open PRs\n" +
+                "`/givemeapr` — Get assigned to a random open PR you haven't reviewed")
+            .AddField("Tickets",
+                "`/trackticket` — Manually track an existing ADO work item\n" +
+                "`/untrackticket` — Stop tracking a ticket, delete embed and archive thread\n" +
+                "`/unassigned` — List ADO tickets with no assignee")
+            .AddField("Scores",
+                "`/score [user]` — Show your score and stats, or another user's\n" +
+                "`/leaderboard` — Show the top scorers\n" +
+                "`/leaderboard-verbose` — Leaderboard with per-category breakdown")
+            .AddField("Config",
+                "`/map-user` — Map a Discord user to a GitHub or DevOps identity\n" +
+                "`/listmappings [user]` — List Discord ↔ GitHub/DevOps mappings\n" +
+                "`/configui` — Get a one-time link to the web config UI\n" +
+                "`/botdelete` — Delete one or more bot messages by ID")
+            .WithCurrentTimestamp()
+            .Build();
+
+        await command.RespondAsync(ephemeral: true, embeds: [embed]);
     }
 
     private async Task HandleConfigUi(SocketSlashCommand command)
