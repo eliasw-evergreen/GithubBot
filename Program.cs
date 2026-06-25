@@ -345,6 +345,7 @@ app.MapGet("/config/ui", async (HttpContext context, UserMapService userMap, Pre
     var allScores = scores.GetAll();
     var rouletteExclusions = prefs.GetRouletteExclusions();
     var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines());
+    context.Response.Headers.CacheControl = "no-store";
     return Results.Content(html, "text/html");
 });
 
