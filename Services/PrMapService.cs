@@ -9,6 +9,7 @@ public class PrMapEntry
     public long? ClosedAt { get; set; }
     public int? PrNumber { get; set; }
     public string? PrTitle { get; set; }
+    public string? AuthorLogin { get; set; }
 }
 
 

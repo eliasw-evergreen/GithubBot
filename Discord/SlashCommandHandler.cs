@@ -410,12 +410,14 @@ public class SlashCommandHandler
             return;
         }
 
-        // Build candidate pool: mapped Discord users that are guild members and not excluded
+        // Build candidate pool: mapped Discord users that are guild members, not excluded, and not the PR author
+        var authorDiscordId = prEntry.AuthorLogin != null ? _userMap.GitHubToDiscord(prEntry.AuthorLogin) : null;
         var candidates = _userMap.GetAll().Keys
             .Select(id => ulong.TryParse(id, out var uid) ? guild.GetUser(uid) : null)
             .Where(u => u != null)
             .Cast<SocketGuildUser>()
             .Where(u => !_prefs.IsRouletteExcluded(u.Id.ToString()))
+            .Where(u => authorDiscordId == null || u.Id.ToString() != authorDiscordId)
             .Where(u => role == null || u.Roles.Any(r => r.Id == role.Id))
             .ToList();
 
