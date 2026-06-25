@@ -55,7 +55,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v15";
+    private const string CommandsVersion = "v16";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -129,7 +129,7 @@ public class SlashCommandHandler
                 new SlashCommandBuilder()
                     .WithName("trackticket")
                     .WithDescription("Fetch a ticket from ADO and start tracking it in Discord")
-                    .AddOption("id", ApplicationCommandOptionType.Integer, "Work item ID", isRequired: true)
+                    .AddOption("id", ApplicationCommandOptionType.Integer, "Work item ID", isRequired: true, isAutocomplete: true)
                     .Build(),
 
                 new SlashCommandBuilder()
