@@ -58,10 +58,11 @@ public class AdoWorkItemHandler
                 $"#{wi.Id} — {wi.Title ?? wi.WorkItemType}", ct);
             _workItemMap.Set(wi.Id, new WorkItemMapEntry
             {
-                MessageId = msg.Id,
-                ThreadId  = threadId != 0 ? threadId : null,
-                Title     = wi.Title,
-                WorkItemType = wi.WorkItemType,
+                MessageId      = msg.Id,
+                ThreadId       = threadId != 0 ? threadId : null,
+                Title          = wi.Title,
+                WorkItemType   = wi.WorkItemType,
+                AssignedToEmail = wi.AssignedToEmail,
             });
         }
     }
@@ -192,10 +193,9 @@ public class AdoWorkItemHandler
             await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
 
             if (wi.Title != null && wi.Title != stored.Title)
-            {
                 stored.Title = wi.Title;
-                _workItemMap.Set(wi.Id, stored);
-            }
+            stored.AssignedToEmail = wi.AssignedToEmail;
+            _workItemMap.Set(wi.Id, stored);
         }
 
         // Post the field-change summary in the thread
@@ -348,10 +348,11 @@ public class AdoWorkItemHandler
                     $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
                 _workItemMap.Set(wi.Id, new WorkItemMapEntry
                 {
-                    MessageId    = found.Id,
-                    ThreadId     = adoptedThreadId != 0 ? adoptedThreadId : null,
-                    Title        = wi.Title,
-                    WorkItemType = wi.WorkItemType,
+                    MessageId       = found.Id,
+                    ThreadId        = adoptedThreadId != 0 ? adoptedThreadId : null,
+                    Title           = wi.Title,
+                    WorkItemType    = wi.WorkItemType,
+                    AssignedToEmail = wi.AssignedToEmail,
                 });
                 return adoptedThreadId != 0 ? adoptedThreadId : channelId;
             }
@@ -374,10 +375,11 @@ public class AdoWorkItemHandler
                 $"#{wi.Id} — {wi.Title ?? wi.WorkItemType ?? "Work Item"}", ct);
             _workItemMap.Set(wi.Id, new WorkItemMapEntry
             {
-                MessageId    = stub.Id,
-                ThreadId     = stubThreadId != 0 ? stubThreadId : null,
-                Title        = wi.Title,
-                WorkItemType = wi.WorkItemType,
+                MessageId       = stub.Id,
+                ThreadId        = stubThreadId != 0 ? stubThreadId : null,
+                Title           = wi.Title,
+                WorkItemType    = wi.WorkItemType,
+                AssignedToEmail = wi.AssignedToEmail,
             });
             return stubThreadId != 0 ? stubThreadId : channelId;
         }

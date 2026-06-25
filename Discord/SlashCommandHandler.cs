@@ -15,6 +15,7 @@ public class SlashCommandHandler
     private readonly ScoreService _scores;
     private readonly RouletteService _roulette;
     private readonly ConfigUiTokenService _configTokens;
+    private readonly WorkItemMapService _workItemMap;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
     private readonly bool _noAuth;
@@ -28,6 +29,7 @@ public class SlashCommandHandler
         ScoreService scores,
         RouletteService roulette,
         ConfigUiTokenService configTokens,
+        WorkItemMapService workItemMap,
         IConfiguration config,
         ILogger<SlashCommandHandler> logger)
     {
@@ -38,6 +40,7 @@ public class SlashCommandHandler
         _scores = scores;
         _roulette = roulette;
         _configTokens = configTokens;
+        _workItemMap = workItemMap;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -45,7 +48,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v9";
+    private const string CommandsVersion = "v10";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -114,6 +117,11 @@ public class SlashCommandHandler
                     .WithName("listmappings")
                     .WithDescription("List Discord ↔ GitHub/DevOps mappings")
                     .AddOption("user", ApplicationCommandOptionType.User, "Show mappings for a specific user (omit for all)", isRequired: false)
+                    .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("unassigned")
+                    .WithDescription("List tracked ADO tickets with no assignee")
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -191,6 +199,9 @@ public class SlashCommandHandler
                 break;
             case "map-user":
                 await HandleMapUser(command);
+                break;
+            case "unassigned":
+                await HandleUnassigned(command);
                 break;
         }
     }
@@ -392,6 +403,45 @@ public class SlashCommandHandler
                 .WithDescription(string.Join('\n', lines))
                 .Build()]);
         }
+    }
+
+    private async Task HandleUnassigned(SocketSlashCommand command)
+    {
+        var unassigned = _workItemMap.GetAll()
+            .Where(kv => string.IsNullOrEmpty(kv.Value.AssignedToEmail))
+            .OrderBy(kv => int.TryParse(kv.Key, out var n) ? n : int.MaxValue)
+            .ToList();
+
+        if (unassigned.Count == 0)
+        {
+            await command.RespondAsync("No unassigned tracked tickets.", ephemeral: true);
+            return;
+        }
+
+        var ticketChannelId = ulong.TryParse(_config["Discord:TicketChannelId"], out var tcid) ? tcid : _channelId;
+        var lines = unassigned.Select(kv =>
+        {
+            var id = kv.Key;
+            var e = kv.Value;
+            var guildId = (command.Channel as SocketGuildChannel)?.Guild.Id;
+            var threadLink = e.ThreadId.HasValue
+                ? $"<#{e.ThreadId.Value}>"
+                : e.MessageId != 0 && guildId.HasValue ? $"https://discord.com/channels/{guildId}/{ticketChannelId}/{e.MessageId}" : $"#{id}";
+            var type = string.IsNullOrEmpty(e.WorkItemType) ? "" : $" [{e.WorkItemType}]";
+            var title = string.IsNullOrEmpty(e.Title) ? "" : $" — {e.Title}";
+            return $"**#{id}**{type}{title} {threadLink}";
+        });
+
+        var body = string.Join("\n", lines);
+        if (body.Length > 1900) body = body[..1900] + "\n…";
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🎫 Unassigned Tickets ({unassigned.Count})")
+            .WithDescription(body)
+            .WithColor(Color.Orange)
+            .Build();
+
+        await command.RespondAsync(embed: embed, ephemeral: true);
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)
