@@ -426,41 +426,48 @@ public class AdoWorkItemHandler
         if (_adoApi == null) return "ADO API not configured (set ADO_ORG_URL, ADO_PROJECT, ADO_PAT).";
         if (!TryGetChannel(out var channelId)) return "No ticket channel configured.";
 
-        if (_workItemMap.Get(id) is { } existing)
-        {
-            if (existing.ThreadId.HasValue)
-                return $"Ticket #{id} is already tracked — <#{existing.ThreadId.Value}>";
-            if (existing.MessageId != 0 &&
-                ulong.TryParse(_config["Discord:GuildId"], out var gid) &&
-                ulong.TryParse(_config["Discord:TicketChannelId"], out var cid))
-                return $"Ticket #{id} is already tracked — https://discord.com/channels/{gid}/{cid}/{existing.MessageId}";
-            return $"Ticket #{id} is already being tracked.";
-        }
-
         var items = await _adoApi.GetWorkItemsAsync([id], ct);
         if (items.Count == 0) return $"Ticket #{id} not found in ADO.";
 
         var item = items[0];
-        var (color, emoji) = TypeEmoji(item.WorkItemType);
-        var adoUrl = _adoApi.BuildWorkItemUrl(id);
-
+        var (color, _) = TypeEmoji(item.WorkItemType);
         var assignedEmail = ExtractEmail(item.AssignedTo);
-        var assignedDiscord = !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null;
-        var createdByEmail = (string?)null; // not returned by batch fetch field list
-
         var wi = new WorkItemInfo(
-            Id:              id,
-            Title:           item.Title,
-            WorkItemType:    item.WorkItemType,
-            State:           item.State,
-            AreaPath:        item.AreaPath,
-            Description:     null,
-            AssignedToEmail: assignedEmail,
-            AssignedToDiscord: assignedDiscord,
-            CreatedByEmail:  createdByEmail,
-            ChangedByEmail:  null,
-            Url:             adoUrl,
-            Color:           color);
+            Id:               id,
+            Title:            item.Title,
+            WorkItemType:     item.WorkItemType,
+            State:            item.State,
+            AreaPath:         item.AreaPath,
+            Description:      null,
+            AssignedToEmail:  assignedEmail,
+            AssignedToDiscord: !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
+            CreatedByEmail:   null,
+            ChangedByEmail:   null,
+            Url:              _adoApi.BuildWorkItemUrl(id),
+            Color:            color);
+
+        // Already tracked — refresh embed and return link
+        if (_workItemMap.Get(id) is { } existing)
+        {
+            if (existing.MessageId != 0)
+            {
+                var refreshed = BuildBaseEmbed(wi, color);
+                AddStandardFields(refreshed, wi, showDescription: false);
+                await _discord.EditMessageAsync(channelId, existing.MessageId, null, refreshed.Build());
+                existing.Title          = wi.Title;
+                existing.AssignedToEmail = wi.AssignedToEmail;
+                _workItemMap.Set(id, existing);
+            }
+
+            var link = existing.ThreadId.HasValue
+                ? $"<#{existing.ThreadId.Value}>"
+                : existing.MessageId != 0 &&
+                  ulong.TryParse(_config["Discord:GuildId"], out var gid) &&
+                  ulong.TryParse(_config["Discord:TicketChannelId"], out var cid)
+                    ? $"https://discord.com/channels/{gid}/{cid}/{existing.MessageId}"
+                    : $"#{id}";
+            return $"Ticket #{id} refreshed — {link}";
+        }
 
         var embed = BuildBaseEmbed(wi, color);
         AddStandardFields(embed, wi, showDescription: false);
