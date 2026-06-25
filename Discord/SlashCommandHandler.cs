@@ -321,14 +321,18 @@ public class SlashCommandHandler
         if (interaction.Data.CommandName == "trackpr" && focused.Name == "pr" && _gitHub != null)
         {
             var repos = GetKnownGitHubRepos();
-            var trackedKeys = _prMap.GetAll()
+            var trackedByRepo = _prMap.GetAll()
                 .Where(kv => kv.Value.PrNumber != null && !string.IsNullOrEmpty(kv.Value.RepoFullName))
                 .Select(kv => $"{kv.Value.RepoFullName}|{kv.Value.PrNumber}")
+                .ToHashSet();
+            var trackedByNumber = _prMap.GetAll()
+                .Where(kv => kv.Value.PrNumber != null && string.IsNullOrEmpty(kv.Value.RepoFullName))
+                .Select(kv => kv.Value.PrNumber!.Value)
                 .ToHashSet();
 
             var summaries = _gitHub.GetCachedPrSummaries(repos);
             var choices = summaries
-                .Where(s => !trackedKeys.Contains($"{s.Repo}|{s.Number}"))
+                .Where(s => !trackedByRepo.Contains($"{s.Repo}|{s.Number}") && !trackedByNumber.Contains(s.Number))
                 .Where(s => string.IsNullOrEmpty(input) ||
                              s.Number.ToString().Contains(input) ||
                              (s.Title?.ToLowerInvariant().Contains(input) ?? false) ||
@@ -891,7 +895,13 @@ public class SlashCommandHandler
 
         _gitHub.InvalidatePrSummaryCache();
 
-        await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ PR #{pr.Number} is now tracked — **{pr.Title}**");
+        var guildIdStr = _config["Discord:GuildId"];
+        var threadTarget = threadId != 0 ? threadId.ToString() : channel.Id.ToString();
+        var msgLink = guildIdStr != null
+            ? $"https://discord.com/channels/{guildIdStr}/{threadTarget}/{msg.Id}"
+            : null;
+        var linkText = msgLink != null ? $"[PR #{pr.Number} — {pr.Title}]({msgLink})" : $"**PR #{pr.Number} — {pr.Title}**";
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ Now tracking {linkText}");
     }
 
     private async Task HandleGiveMeAPr(SocketSlashCommand command)
