@@ -874,7 +874,7 @@ public class SlashCommandHandler
         var authorMention = _userMap.GitHubToDiscord(pr.User.Login) is string did
             ? $"<@{did}>"
             : $"**{pr.User.Login}**";
-        var msg = await discord.SendMessageAsync(channel.Id, $"{authorMention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed);
+        var msg = await discord.SendMessageAsync(channel.Id, null, embed);
         if (msg == null)
         {
             await command.ModifyOriginalResponseAsync(m => m.Content = "Failed to post PR embed.");
@@ -894,6 +894,9 @@ public class SlashCommandHandler
         });
 
         _gitHub.InvalidatePrSummaryCache();
+
+        if (threadId != 0)
+            _ = Task.Run(() => discord.BackfillPrCommentsAsync(threadId, repoFullName, pr.Number, pr.Title, pr.HtmlUrl));
 
         var guildIdStr = _config["Discord:GuildId"];
         var threadTarget = threadId != 0 ? threadId.ToString() : channel.Id.ToString();

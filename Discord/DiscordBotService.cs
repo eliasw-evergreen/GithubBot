@@ -159,6 +159,69 @@ public class DiscordBotService : IHostedService
             _logger.LogInformation("[Backfill] Updated draft status for {Count} PR(s)", updated);
     }
 
+    public async Task BackfillPrCommentsAsync(ulong threadId, string repoFullName, int prNumber, string prTitle, string prHtmlUrl, CancellationToken ct = default)
+    {
+        if (_gitHub == null) return;
+
+        try
+        {
+            var comments = await _gitHub.GetPullRequestCommentsAsync(repoFullName, prNumber, ct);
+            var reviews  = await _gitHub.GetPullRequestReviewsAsync(repoFullName, prNumber, ct);
+
+            var meaningfulReviews = reviews
+                .Where(r => !string.IsNullOrWhiteSpace(r.Body) && !string.Equals(r.State, "pending", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (comments.Count == 0 && meaningfulReviews.Count == 0) return;
+
+            var items = new List<(DateTime At, object Item)>();
+            foreach (var c in comments)
+                items.Add((c.CreatedAt ?? DateTime.MinValue, c));
+            foreach (var r in meaningfulReviews)
+                items.Add((r.SubmittedAt ?? DateTime.MinValue, r));
+            items.Sort((a, b) => a.At.CompareTo(b.At));
+
+            // Minimal models for the embed builders
+            var pr = new PullRequest
+            {
+                Number  = prNumber,
+                Title   = prTitle,
+                HtmlUrl = prHtmlUrl,
+                User    = new GitHubUser { Login = "" },
+                Head    = new Branch { Ref = "" },
+                Base    = new Branch { Ref = "" },
+            };
+            var repo = new Repository
+            {
+                FullName = repoFullName,
+                Name     = repoFullName.Split('/').Last(),
+                HtmlUrl  = $"https://github.com/{repoFullName}",
+            };
+
+            var commentReaction  = _prefs.ResolveReaction("comment",           _config["Reactions:Comment"]);
+            var approvedReaction = _prefs.ResolveReaction("approved",          _config["Reactions:Approved"]);
+            var changesReaction  = _prefs.ResolveReaction("changes_requested", _config["Reactions:ChangesRequested"]);
+
+            _logger.LogInformation("[Backfill] Posting {Count} historical item(s) into thread {ThreadId} for PR #{Pr}", items.Count, threadId, prNumber);
+
+            foreach (var (_, item) in items)
+            {
+                global::Discord.Embed embed;
+                if (item is Models.IssueComment comment)
+                    embed = EmbedBuilders.CommentEmbed(comment, pr, repo, false, _userMap, commentReaction);
+                else if (item is Models.Review review)
+                    embed = EmbedBuilders.ReviewSubmittedEmbed(review, pr, repo, _userMap, approvedReaction, changesReaction);
+                else continue;
+
+                await SendMessageAsync(threadId, null, embed, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Backfill] Failed to backfill comments for PR #{Pr}", prNumber);
+        }
+    }
+
     private static readonly System.Text.RegularExpressions.Regex _githubPrUrlRegex =
         new(@"github\.com/([^/]+/[^/]+)/pull/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
@@ -332,8 +395,15 @@ public class DiscordBotService : IHostedService
                 PrTitle = prTitle,
             });
 
-            if (threadId != 0 && _client.GetChannel(threadId) is IMessageChannel threadCh)
-                return threadCh;
+            if (threadId != 0)
+            {
+                var repoFromUrl = _githubPrUrlRegex.Match(prHtmlUrl);
+                if (repoFromUrl.Success)
+                    _ = Task.Run(() => BackfillPrCommentsAsync(threadId, repoFromUrl.Groups[1].Value, prNumber, prTitle, prHtmlUrl));
+
+                if (_client.GetChannel(threadId) is IMessageChannel threadCh)
+                    return threadCh;
+            }
 
             return channel;
         }
@@ -362,8 +432,15 @@ public class DiscordBotService : IHostedService
             PrTitle = prTitle,
         });
 
-        if (newThreadId != 0 && _client.GetChannel(newThreadId) is IMessageChannel newThread)
-            return newThread;
+        if (newThreadId != 0)
+        {
+            var repoFromUrl = _githubPrUrlRegex.Match(prHtmlUrl);
+            if (repoFromUrl.Success)
+                _ = Task.Run(() => BackfillPrCommentsAsync(newThreadId, repoFromUrl.Groups[1].Value, prNumber, prTitle, prHtmlUrl));
+
+            if (_client.GetChannel(newThreadId) is IMessageChannel newThread)
+                return newThread;
+        }
 
         return channel;
     }

@@ -106,6 +106,44 @@ public class GitHubApiService
         return results;
     }
 
+    public async Task<List<GithubBot.Models.IssueComment>> GetPullRequestCommentsAsync(string repoFullName, int prNumber, CancellationToken ct = default)
+    {
+        var results = new List<GithubBot.Models.IssueComment>();
+        var page = 1;
+        while (true)
+        {
+            var url = $"https://api.github.com/repos/{repoFullName}/issues/{prNumber}/comments?per_page=100&page={page}";
+            var response = await _http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) break;
+            var arr = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)).RootElement;
+            if (arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0) break;
+            var batch = arr.Deserialize<List<GithubBot.Models.IssueComment>>(_json) ?? [];
+            results.AddRange(batch);
+            if (batch.Count < 100) break;
+            page++;
+        }
+        return results;
+    }
+
+    public async Task<List<GithubBot.Models.Review>> GetPullRequestReviewsAsync(string repoFullName, int prNumber, CancellationToken ct = default)
+    {
+        var results = new List<GithubBot.Models.Review>();
+        var page = 1;
+        while (true)
+        {
+            var url = $"https://api.github.com/repos/{repoFullName}/pulls/{prNumber}/reviews?per_page=100&page={page}";
+            var response = await _http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) break;
+            var arr = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)).RootElement;
+            if (arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0) break;
+            var batch = arr.Deserialize<List<GithubBot.Models.Review>>(_json) ?? [];
+            results.AddRange(batch);
+            if (batch.Count < 100) break;
+            page++;
+        }
+        return results;
+    }
+
     // Returns cached summaries immediately; triggers background refresh if cache is empty.
     public List<GitHubPrSummary> GetCachedPrSummaries(IEnumerable<string> repos)
     {
