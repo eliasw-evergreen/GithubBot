@@ -13,7 +13,19 @@ public record GitHubPr(
     string? Body = null,
     string? HeadRef = null,
     string? BaseRef = null,
-    string? NodeId = null);
+    string? NodeId = null,
+    bool Merged = false);
+
+public static class GitHubPrExtensions
+{
+    public static string EmbedAction(this GitHubPr pr) => pr switch
+    {
+        { State: "closed", Merged: true }  => "closed_merged",
+        { State: "closed" }                => "closed_unmerged",
+        { Draft: true }                    => "converted_to_draft",
+        _                                  => "opened",
+    };
+}
 
 public record GitHubPrSummary(string Repo, int Number, string? Title, bool Draft, string? HtmlUrl);
 
@@ -62,7 +74,8 @@ public class GitHubApiService
             Body:      el.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null,
             HeadRef:   headRef,
             BaseRef:   baseRef,
-            NodeId:    el.TryGetProperty("node_id", out var nid) && nid.ValueKind == JsonValueKind.String ? nid.GetString() : null);
+            NodeId:    el.TryGetProperty("node_id", out var nid) && nid.ValueKind == JsonValueKind.String ? nid.GetString() : null,
+            Merged:    el.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True);
     }
 
     public async Task<GitHubPr?> GetPullRequestAsync(string repoFullName, int prNumber, CancellationToken ct = default)

@@ -265,7 +265,7 @@ public class DiscordBotService : IHostedService
                 HtmlUrl  = $"https://github.com/{repoFullName}",
             };
 
-            return EmbedBuilders.PrEmbed(pr, repo, "opened", _userMap,
+            return EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
                 openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
                 reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
                 readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),

@@ -862,7 +862,7 @@ public class SlashCommandHandler
             return;
         }
 
-        var embed = EmbedBuilders.PrEmbed(pr, repo, "opened", _userMap,
+        var embed = EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
             reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
             readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
@@ -891,6 +891,7 @@ public class SlashCommandHandler
             AuthorLogin  = ghPr.UserLogin,
             IsDraft      = ghPr.Draft,
             RepoFullName = repoFullName,
+            ClosedAt     = ghPr.State == "closed" ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : null,
         });
 
         _gitHub.InvalidatePrSummaryCache();
