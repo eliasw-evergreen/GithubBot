@@ -106,7 +106,7 @@ if (!string.IsNullOrEmpty(ghPat))
 var orApiKey = builder.Configuration["OpenRouter:ApiKey"];
 if (!string.IsNullOrEmpty(orApiKey))
 {
-    var orModel  = builder.Configuration["OpenRouter:Model"] ?? "meta-llama/llama-3.1-8b-instruct:free";
+    var orModel  = builder.Configuration["OpenRouter:Model"] ?? "meta-llama/llama-3.3-70b-instruct:free";
     var orLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<PrSummaryService>();
     builder.Services.AddSingleton(new PrSummaryService(orApiKey, orModel, orLogger));
 }
