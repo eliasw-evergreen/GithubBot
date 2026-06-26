@@ -991,17 +991,39 @@ public class SlashCommandHandler
             await command.ModifyOriginalResponseAsync(m => m.Content = $"Could not find that PR in the tracker (nodeId: `{nodeId}`).");
             return;
         }
-        if (string.IsNullOrEmpty(stored.RepoFullName) || stored.PrNumber == null)
+        string? repoFullName = stored.RepoFullName;
+        if ((string.IsNullOrEmpty(repoFullName) || stored.PrNumber == null) && stored.PrNumber != null)
         {
-            await command.ModifyOriginalResponseAsync(m => m.Content = $"PR #{stored.PrNumber} is missing repo info — untrack and re-track it to fix.");
+            // Older entries lack RepoFullName — try to find it from the PR summary cache
+            var repos = GetKnownGitHubRepos();
+            var summaries = _gitHub.GetCachedPrSummaries(repos);
+            repoFullName = summaries.FirstOrDefault(s => s.Number == stored.PrNumber.Value)?.Repo;
+            if (string.IsNullOrEmpty(repoFullName))
+            {
+                // Refresh cache and try once more
+                await _gitHub.RefreshPrSummariesAsync(repos);
+                summaries = _gitHub.GetCachedPrSummaries(repos);
+                repoFullName = summaries.FirstOrDefault(s => s.Number == stored.PrNumber.Value)?.Repo;
+            }
+        }
+        if (string.IsNullOrEmpty(repoFullName) || stored.PrNumber == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = $"PR #{stored.PrNumber} is missing repo info and could not be resolved — untrack and re-track it to fix.");
             return;
         }
 
-        var ghPr = await _gitHub.GetPullRequestAsync(stored.RepoFullName, stored.PrNumber.Value);
+        var ghPr = await _gitHub.GetPullRequestAsync(repoFullName, stored.PrNumber.Value);
         if (ghPr == null)
         {
             await command.ModifyOriginalResponseAsync(m => m.Content = "Could not fetch PR from GitHub.");
             return;
+        }
+
+        // Backfill RepoFullName if it was missing
+        if (string.IsNullOrEmpty(stored.RepoFullName))
+        {
+            stored.RepoFullName = repoFullName;
+            _prMap.Save();
         }
 
         var summary = await _summary.SummarizeAsync(ghPr.Body);
