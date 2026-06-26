@@ -19,6 +19,7 @@ public class SlashCommandHandler
     private readonly WorkItemMapService _workItemMap;
     private readonly AdoApiService? _adoApi;
     private readonly GitHubApiService? _gitHub;
+    private readonly PrSummaryService? _summary;
     private readonly IServiceProvider _services;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
@@ -38,7 +39,8 @@ public class SlashCommandHandler
         IConfiguration config,
         ILogger<SlashCommandHandler> logger,
         AdoApiService? adoApi = null,
-        GitHubApiService? gitHub = null)
+        GitHubApiService? gitHub = null,
+        PrSummaryService? summary = null)
     {
         _client = client;
         _userMap = userMap;
@@ -51,6 +53,7 @@ public class SlashCommandHandler
         _services = services;
         _adoApi = adoApi;
         _gitHub = gitHub;
+        _summary = summary;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -899,14 +902,19 @@ public class SlashCommandHandler
             return;
         }
 
-        var embed = EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
+        var prAction = ghPr.EmbedAction();
+        var descOverride = prAction is "opened" or "reopened" or "ready_for_review"
+            ? await (_summary?.SummarizeAsync(ghPr.Body) ?? Task.FromResult<string?>(null))
+            : null;
+        var embed = EmbedBuilders.PrEmbed(pr, repo, prAction, _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
             reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
             readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
             convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
             mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
             closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
-            descMaxLines:             _prefs.ResolvePrDescMaxLines());
+            descMaxLines:             _prefs.ResolvePrDescMaxLines(),
+            descriptionOverride:      descOverride);
 
         var authorMention = _userMap.GitHubToDiscord(pr.User.Login) is string did
             ? $"<@{did}>"

@@ -63,6 +63,8 @@ var envMap = new Dictionary<string, string?>
     ["AzureDevOps:Pat"]           = Env.GetString("ADO_PAT"),
     ["GitHub:Pat"]                = Env.GetString("GITHUB_PAT"),
     ["GitHub:Repos"]              = Env.GetString("GITHUB_REPOS"),
+    ["OpenRouter:ApiKey"]         = Env.GetString("OPENROUTER_API_KEY"),
+    ["OpenRouter:Model"]          = Env.GetString("OPENROUTER_MODEL"),
 };
 
 builder.Configuration
@@ -100,6 +102,13 @@ if (!string.IsNullOrEmpty(ghPat))
 {
     var ghLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<GitHubApiService>();
     builder.Services.AddSingleton(new GitHubApiService(ghPat, ghLogger));
+}
+var orApiKey = builder.Configuration["OpenRouter:ApiKey"];
+if (!string.IsNullOrEmpty(orApiKey))
+{
+    var orModel  = builder.Configuration["OpenRouter:Model"] ?? "meta-llama/llama-3.1-8b-instruct:free";
+    var orLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<PrSummaryService>();
+    builder.Services.AddSingleton(new PrSummaryService(orApiKey, orModel, orLogger));
 }
 
 builder.Services.AddDistributedMemoryCache();

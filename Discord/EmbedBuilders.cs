@@ -11,7 +11,7 @@ public static class EmbedBuilders
         string? openedReaction = null, string? reopenedReaction = null,
         string? readyForReviewReaction = null, string? convertedToDraftReaction = null,
         string? mergedReaction = null, string? closedReaction = null,
-        int descMaxLines = 10)
+        int descMaxLines = 10, string? descriptionOverride = null)
     {
         var openedEmoji   = ReactionEmoji(openedReaction)           ?? "🔀";
         var reopenedEmoji = ReactionEmoji(reopenedReaction)         ?? "🔁";
@@ -33,14 +33,22 @@ public static class EmbedBuilders
 
         var draftTag = pr.Draft ? " *(Draft)*" : "";
         var cleaned = CleanBody(StripDevOpsLinks(pr.Body));
-        var descText = cleaned.Text;
-        if (!string.IsNullOrWhiteSpace(descText) && descMaxLines > 0)
+        string description;
+        if (descriptionOverride != null)
         {
-            var lines = descText.Split('\n');
-            if (lines.Length > descMaxLines)
-                descText = string.Join('\n', lines.Take(descMaxLines)) + $"\n*… ({lines.Length - descMaxLines} more lines)*";
+            description = Truncate(descriptionOverride, 1024);
         }
-        var description = !string.IsNullOrWhiteSpace(descText) ? Truncate(descText, 1024) : "*No description provided.*";
+        else
+        {
+            var descText = cleaned.Text;
+            if (!string.IsNullOrWhiteSpace(descText) && descMaxLines > 0)
+            {
+                var lines = descText.Split('\n');
+                if (lines.Length > descMaxLines)
+                    descText = string.Join('\n', lines.Take(descMaxLines)) + $"\n*… ({lines.Length - descMaxLines} more lines)*";
+            }
+            description = !string.IsNullOrWhiteSpace(descText) ? Truncate(descText, 1024) : "*No description provided.*";
+        }
         var author = Mention(userMap, pr.User.Login);
 
         var embed = new EmbedBuilder()

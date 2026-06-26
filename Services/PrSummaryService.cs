@@ -1,47 +1,74 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
 namespace GithubBot.Services;
 
-/// <summary>
-/// Scaffold for AI-powered PR description summarization.
-/// Not wired up yet — plug into EmbedBuilders.PrEmbed when ready.
-/// </summary>
 public class PrSummaryService
 {
-    // TODO: inject IConfiguration or options to read API key / model / endpoint
-    // TODO: add Anthropic.SDK (or whatever client) as a PackageReference
+    private readonly HttpClient _http;
+    private readonly string _model;
+    private readonly ILogger<PrSummaryService> _logger;
+
+    private const int MinBodyLength = 300;
+    private static readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
+
+    public PrSummaryService(string apiKey, string model, ILogger<PrSummaryService> logger)
+    {
+        _model = model;
+        _logger = logger;
+        _http = new HttpClient { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        _http.DefaultRequestHeaders.Add("X-Title", "GithubBot");
+    }
 
     /// <summary>
-    /// Summarizes a PR description to a concise few sentences.
-    /// Returns null if summarization is unavailable or the input is too short to bother.
+    /// Summarizes a PR description. Returns null if body is too short or summarization fails.
     /// </summary>
-    /// <param name="body">Raw PR description text.</param>
-    /// <param name="maxLines">Truncate output to this many lines. null = no limit.</param>
-    /// <param name="maxChars">Truncate output to this many characters. null = no limit.</param>
-    /// <param name="ct">Cancellation token.</param>
-    public Task<string?> SummarizeAsync(string? body, int? maxLines = null, int? maxChars = null, CancellationToken ct = default)
+    public async Task<string?> SummarizeAsync(string? body, CancellationToken ct = default)
     {
-        // TODO: implement — rough shape:
-        //   if (string.IsNullOrWhiteSpace(body) || body.Length < 300) return Task.FromResult<string?>(null);
-        //   var constraint = (maxLines, maxChars) switch {
-        //       ({ } l, { } c) => $"in at most {l} lines and {c} characters",
-        //       ({ } l, null) => $"in at most {l} lines",
-        //       (null, { } c) => $"in at most {c} characters",
-        //       _             => "in 2-3 sentences",
-        //   };
-        //   var response = await _client.Messages.CreateAsync(new() {
-        //       Model = "claude-haiku-4-5-20251001",
-        //       MaxTokens = maxChars.HasValue ? Math.Min(maxChars.Value / 3, 500) : 150,
-        //       Messages = [new() { Role = "user", Content = $"Summarize this PR description {constraint}:\n\n{body}" }]
-        //   }, ct);
-        //   var summary = response.Content.FirstOrDefault()?.Text;
-        //   // Hard-truncate as a safety net in case the model overshoots
-        //   if (summary != null && maxLines.HasValue)
-        //   {
-        //       var lines = summary.Split('\n');
-        //       if (lines.Length > maxLines.Value) summary = string.Join('\n', lines.Take(maxLines.Value));
-        //   }
-        //   if (summary != null && maxChars.HasValue && summary.Length > maxChars.Value)
-        //       summary = summary[..maxChars.Value].TrimEnd() + "…";
-        //   return summary;
-        return Task.FromResult<string?>(null);
+        if (string.IsNullOrWhiteSpace(body) || body.Length < MinBodyLength)
+            return null;
+
+        try
+        {
+            var payload = new
+            {
+                model = _model,
+                max_tokens = 120,
+                messages = new[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = $"Summarize this pull request description in 2-3 concise sentences. Return only the summary, no preamble:\n\n{body}"
+                    }
+                }
+            };
+
+            var json = JsonSerializer.Serialize(payload);
+            var response = await _http.PostAsync("chat/completions",
+                new StringContent(json, Encoding.UTF8, "application/json"), ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("[PrSummary] OpenRouter request failed: {Status}", response.StatusCode);
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var text = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+
+            return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[PrSummary] Summarization failed");
+            return null;
+        }
     }
 }

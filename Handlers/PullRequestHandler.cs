@@ -15,6 +15,7 @@ public class PullRequestHandler : IGitHubEventHandler
     private readonly PreferencesService _prefs;
     private readonly ScoreService _scores;
     private readonly IConfiguration _config;
+    private readonly PrSummaryService? _summary;
     private readonly ILogger<PullRequestHandler> _logger;
 
     public PullRequestHandler(
@@ -24,7 +25,8 @@ public class PullRequestHandler : IGitHubEventHandler
         PreferencesService prefs,
         ScoreService scores,
         IConfiguration config,
-        ILogger<PullRequestHandler> logger)
+        ILogger<PullRequestHandler> logger,
+        PrSummaryService? summary = null)
     {
         _discord = discord;
         _prMap = prMap;
@@ -32,6 +34,7 @@ public class PullRequestHandler : IGitHubEventHandler
         _prefs = prefs;
         _scores = scores;
         _config = config;
+        _summary = summary;
         _logger = logger;
     }
 
@@ -78,8 +81,12 @@ public class PullRequestHandler : IGitHubEventHandler
             _scores.Award(id, category);
     }
 
-    private global::Discord.Embed BuildPrEmbed(PullRequest pr, Repository repo, string action)
+    private async Task<global::Discord.Embed> BuildPrEmbedAsync(PullRequest pr, Repository repo, string action, CancellationToken ct = default)
     {
+        var descOverride = action is "opened" or "reopened" or "ready_for_review"
+            ? await (_summary?.SummarizeAsync(pr.Body, ct) ?? Task.FromResult<string?>(null))
+            : null;
+
         return EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
             reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
@@ -87,12 +94,13 @@ public class PullRequestHandler : IGitHubEventHandler
             convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
             mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
             closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
-            descMaxLines:             _prefs.ResolvePrDescMaxLines());
+            descMaxLines:             _prefs.ResolvePrDescMaxLines(),
+            descriptionOverride:      descOverride);
     }
 
     private async Task HandleOpenActions(string action, PullRequest pr, Repository repo, CancellationToken ct)
     {
-        var embed = BuildPrEmbed(pr, repo, action);
+        var embed = await BuildPrEmbedAsync(pr, repo, action, ct);
         var mention = _userMap.GitHubToDiscord(pr.User.Login) is string did ? $"<@{did}>" : $"**{pr.User.Login}**";
         var rolePing = _prefs.ResolvePingRole(_config["Roles:PrPing"]);
         var rolePrefix = !string.IsNullOrEmpty(rolePing) ? $"<@&{rolePing}> " : "";
@@ -166,7 +174,7 @@ public class PullRequestHandler : IGitHubEventHandler
     {
         var merged = pr.Merged == true;
         var actionKey = merged ? "closed_merged" : "closed_unmerged";
-        var embed = BuildPrEmbed(pr, repo, actionKey);
+        var embed = await BuildPrEmbedAsync(pr, repo, actionKey, ct);
         var channel = await _discord.GetChannelAsync(ct);
         if (channel == null) return;
 
@@ -270,7 +278,7 @@ public class PullRequestHandler : IGitHubEventHandler
 
         // For untracked PRs, attempt to find/create the thread. Pass the real embed so that
         // if a stub has to be posted it uses the actual PR content rather than a placeholder.
-        var embed = BuildPrEmbed(pr, repo, pr.Draft ? "converted_to_draft" : "opened");
+        var embed = await BuildPrEmbedAsync(pr, repo, pr.Draft ? "converted_to_draft" : "opened", ct);
         await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct, stubEmbed: embed);
 
         // Re-read stored after resolution in case it was just registered

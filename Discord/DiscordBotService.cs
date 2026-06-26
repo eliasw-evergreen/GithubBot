@@ -13,6 +13,7 @@ public class DiscordBotService : IHostedService
     private readonly UserMapService _userMap;
     private readonly PrMapService _prMap;
     private readonly GitHubApiService? _gitHub;
+    private readonly PrSummaryService? _summary;
     private readonly SlashCommandHandler _slashHandler;
     private readonly ILogger<DiscordBotService> _logger;
 
@@ -24,7 +25,8 @@ public class DiscordBotService : IHostedService
         PrMapService prMap,
         SlashCommandHandler slashHandler,
         ILogger<DiscordBotService> logger,
-        GitHubApiService? gitHub = null)
+        GitHubApiService? gitHub = null,
+        PrSummaryService? summary = null)
     {
         _client = client;
         _config = config;
@@ -32,6 +34,7 @@ public class DiscordBotService : IHostedService
         _userMap = userMap;
         _prMap = prMap;
         _gitHub = gitHub;
+        _summary = summary;
         _slashHandler = slashHandler;
         _logger = logger;
 
@@ -265,14 +268,20 @@ public class DiscordBotService : IHostedService
                 HtmlUrl  = $"https://github.com/{repoFullName}",
             };
 
-            return EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
+            var action = ghPr.EmbedAction();
+            var descOverride = action is "opened" or "reopened" or "ready_for_review"
+                ? await (_summary?.SummarizeAsync(ghPr.Body, ct) ?? Task.FromResult<string?>(null))
+                : null;
+
+            return EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
                 openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
                 reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
                 readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
                 convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
                 mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
                 closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
-                descMaxLines:             _prefs.ResolvePrDescMaxLines());
+                descMaxLines:             _prefs.ResolvePrDescMaxLines(),
+                descriptionOverride:      descOverride);
         }
         catch (Exception ex)
         {
