@@ -986,9 +986,14 @@ public class SlashCommandHandler
         }
 
         var stored = _prMap.Get(nodeId);
-        if (stored == null || stored.MessageId == 0 || string.IsNullOrEmpty(stored.RepoFullName) || stored.PrNumber == null)
+        if (stored == null || stored.MessageId == 0)
         {
-            await command.ModifyOriginalResponseAsync(m => m.Content = "Could not find that PR in the tracker.");
+            await command.ModifyOriginalResponseAsync(m => m.Content = $"Could not find that PR in the tracker (nodeId: `{nodeId}`).");
+            return;
+        }
+        if (string.IsNullOrEmpty(stored.RepoFullName) || stored.PrNumber == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = $"PR #{stored.PrNumber} is missing repo info — untrack and re-track it to fix.");
             return;
         }
 
