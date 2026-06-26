@@ -104,9 +104,9 @@ if (!string.IsNullOrEmpty(ghPat))
     builder.Services.AddSingleton(new GitHubApiService(ghPat, ghLogger));
 }
 var orApiKey = builder.Configuration["OpenRouter:ApiKey"];
-if (!string.IsNullOrEmpty(orApiKey))
+var orModel  = builder.Configuration["OpenRouter:Model"];
+if (!string.IsNullOrEmpty(orApiKey) && !string.IsNullOrEmpty(orModel))
 {
-    var orModel  = builder.Configuration["OpenRouter:Model"] ?? "meta-llama/llama-3.3-70b-instruct:free";
     var orLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<PrSummaryService>();
     builder.Services.AddSingleton(new PrSummaryService(orApiKey, orModel, orLogger));
 }
