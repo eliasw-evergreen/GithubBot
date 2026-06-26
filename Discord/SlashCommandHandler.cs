@@ -61,7 +61,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v22";
+    private const string CommandsVersion = "v23";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -184,6 +184,12 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("summarizepr")
+                    .WithDescription("Summarize a tracked PR's description and post it in the thread")
+                    .AddOption("pr", ApplicationCommandOptionType.String, "PR to summarize (start typing to search)", isRequired: true, isAutocomplete: true)
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("givemeapr")
                     .WithDescription("Assign yourself to review a random open PR you haven't authored or commented on")
                     .Build(),
@@ -292,6 +298,9 @@ public class SlashCommandHandler
             case "trackpr":
                 await HandleTrackPr(command);
                 break;
+            case "summarizepr":
+                await HandleSummarizePr(command);
+                break;
             case "givemeapr":
                 await HandleGiveMeAPr(command);
                 break;
@@ -310,7 +319,7 @@ public class SlashCommandHandler
         if (focused == null) return;
         var input = (focused.Value as string ?? "").ToLowerInvariant();
 
-        if (interaction.Data.CommandName == "untrackpr" && focused.Name == "pr")
+        if ((interaction.Data.CommandName == "untrackpr" || interaction.Data.CommandName == "summarizepr") && focused.Name == "pr")
         {
             var choices = _prMap.GetAll()
                 .Where(kvp => kvp.Value.PrNumber != null)
@@ -485,6 +494,7 @@ public class SlashCommandHandler
             .AddField("Pull Requests",
                 "`/trackpr` — Manually track an existing GitHub PR\n" +
                 "`/untrackpr` — Stop tracking a PR, delete embed and archive thread\n" +
+                "`/summarizepr` — Summarize a tracked PR's description in the embed\n" +
                 "`/prroulette` — Assign reviewers to a PR, or balance across all open PRs\n" +
                 "`/givemeapr` — Get assigned to a random open PR you haven't reviewed")
             .AddField("Tickets",
@@ -951,6 +961,99 @@ public class SlashCommandHandler
             : null;
         var linkText = msgLink != null ? $"[PR #{pr.Number} — {pr.Title}]({msgLink})" : $"**PR #{pr.Number} — {pr.Title}**";
         await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ Now tracking {linkText}");
+    }
+
+    private async Task HandleSummarizePr(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        if (_summary == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "OpenRouter is not configured — cannot summarize.");
+            return;
+        }
+        if (_gitHub == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "GitHub PAT is not configured — cannot fetch PR body.");
+            return;
+        }
+
+        var nodeId = command.Data.Options.FirstOrDefault(o => o.Name == "pr")?.Value as string;
+        if (string.IsNullOrEmpty(nodeId))
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No PR specified.");
+            return;
+        }
+
+        var stored = _prMap.Get(nodeId);
+        if (stored == null || stored.MessageId == 0 || string.IsNullOrEmpty(stored.RepoFullName) || stored.PrNumber == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Could not find that PR in the tracker.");
+            return;
+        }
+
+        var ghPr = await _gitHub.GetPullRequestAsync(stored.RepoFullName, stored.PrNumber.Value);
+        if (ghPr == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Could not fetch PR from GitHub.");
+            return;
+        }
+
+        var summary = await _summary.SummarizeAsync(ghPr.Body);
+        if (summary == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR description is too short to summarize.");
+            return;
+        }
+
+        var repoName = stored.RepoFullName.Split('/').Last();
+        var pr = new GithubBot.Models.PullRequest
+        {
+            NodeId  = nodeId,
+            Number  = ghPr.Number,
+            Title   = ghPr.Title ?? $"PR #{ghPr.Number}",
+            HtmlUrl = ghPr.HtmlUrl ?? $"https://github.com/{stored.RepoFullName}/pull/{stored.PrNumber}",
+            User    = new GithubBot.Models.GitHubUser { Login = ghPr.UserLogin ?? "unknown" },
+            Draft   = ghPr.Draft,
+            Body    = ghPr.Body,
+            Head    = new GithubBot.Models.Branch { Ref = ghPr.HeadRef ?? "" },
+            Base    = new GithubBot.Models.Branch { Ref = ghPr.BaseRef ?? "" },
+            Merged  = ghPr.Merged,
+        };
+        var repo = new GithubBot.Models.Repository
+        {
+            FullName = stored.RepoFullName,
+            Name     = repoName,
+            HtmlUrl  = $"https://github.com/{stored.RepoFullName}",
+        };
+
+        var embed = EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
+            openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
+            reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
+            readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
+            convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
+            mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
+            closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
+            descMaxLines:             _prefs.ResolvePrDescMaxLines(),
+            descriptionOverride:      summary);
+
+        var discord = _services.GetRequiredService<DiscordBotService>();
+        var channel = await discord.GetChannelAsync();
+        if (channel == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR channel is not configured.");
+            return;
+        }
+
+        var originalMsg = await discord.GetMessageAsync(channel.Id, stored.MessageId);
+        if (originalMsg == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Could not find the original PR message.");
+            return;
+        }
+
+        await discord.EditMessageAsync(channel.Id, stored.MessageId, originalMsg.Content, embed);
+        await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ Summarized PR #{ghPr.Number}.");
     }
 
     private async Task HandleGiveMeAPr(SocketSlashCommand command)
