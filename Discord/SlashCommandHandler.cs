@@ -58,7 +58,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v21";
+    private const string CommandsVersion = "v22";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -131,7 +131,7 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
-                    .WithName("botdelete")
+                    .WithName("debugdelete")
                     .WithDescription("Delete one or more bot messages by ID")
                     .AddOption("message_ids", ApplicationCommandOptionType.String, "Space or comma-separated message IDs", isRequired: true)
                     .Build(),
@@ -271,7 +271,7 @@ public class SlashCommandHandler
             case "prroulette":
                 await HandlePrRoulette(command);
                 break;
-            case "botdelete":
+            case "debugdelete":
                 await HandleBotDelete(command);
                 break;
             case "listmappings":
@@ -496,7 +496,7 @@ public class SlashCommandHandler
                 "`/map-user` — Map a Discord user to a GitHub or DevOps identity\n" +
                 "`/listmappings [user]` — List Discord ↔ GitHub/DevOps mappings\n" +
                 "`/configui` — Get a one-time link to the web config UI\n" +
-                "`/botdelete` — Delete one or more bot messages by ID")
+                "`/debugdelete` — Delete one or more bot messages by ID")
             .WithCurrentTimestamp()
             .Build();
 
