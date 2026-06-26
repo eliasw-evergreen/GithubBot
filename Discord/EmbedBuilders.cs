@@ -64,7 +64,7 @@ public static class EmbedBuilders
             .WithCurrentTimestamp();
 
         if (action is "opened" or "reopened" or "ready_for_review")
-            embed.AddField("Description", description);
+            embed.AddField(descriptionOverride != null ? "Description — Summarized" : "Description", description);
 
         var ticket = ExtractDevOpsTicket(pr.Body);
         if (ticket != null)
