@@ -67,7 +67,18 @@ public class PullRequestReviewHandler : IGitHubEventHandler
                 await _discord.EditMessageAsync(existing.ChannelId, existing.MessageId, null, embed);
                 return;
             }
-            // Fall through to post as new if not tracked
+            // Not tracked yet — fall through and post as new (submitted may have been dropped)
+        }
+
+        // For submitted: if edited already created the entry, update in place to avoid duplicate
+        if (action == "submitted")
+        {
+            var existing = _reviewMap.Get(review.Id);
+            if (existing != null)
+            {
+                await _discord.EditMessageAsync(existing.ChannelId, existing.MessageId, null, embed);
+                return;
+            }
         }
 
         var pings = new List<string>();
