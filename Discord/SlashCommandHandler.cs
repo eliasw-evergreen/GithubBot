@@ -913,9 +913,12 @@ public class SlashCommandHandler
         }
 
         var prAction = ghPr.EmbedAction();
-        var descOverride = prAction is "opened" or "reopened" or "ready_for_review"
-            ? await (_summary?.SummarizeAsync(ghPr.Body) ?? Task.FromResult<string?>(null))
-            : null;
+        string? descOverride = null;
+        if (prAction is "opened" or "reopened" or "ready_for_review" && _summary != null)
+        {
+            var (status, text) = await _summary.SummarizeAsync(ghPr.Body);
+            if (status == PrSummaryService.SummarizeResult.Ok) descOverride = text;
+        }
         var embed = EmbedBuilders.PrEmbed(pr, repo, prAction, _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
             reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
@@ -1026,10 +1029,15 @@ public class SlashCommandHandler
             _prMap.Save();
         }
 
-        var summary = await _summary.SummarizeAsync(ghPr.Body);
-        if (summary == null)
+        var (summarizeStatus, summary) = await _summary.SummarizeAsync(ghPr.Body);
+        if (summarizeStatus == PrSummaryService.SummarizeResult.TooShort)
         {
-            await command.ModifyOriginalResponseAsync(m => m.Content = "PR description is too short to summarize.");
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR description is too short to summarize (under 300 characters).");
+            return;
+        }
+        if (summarizeStatus != PrSummaryService.SummarizeResult.Ok || summary == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "Summarization failed — OpenRouter returned an error. Check the logs.");
             return;
         }
 

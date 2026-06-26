@@ -83,9 +83,12 @@ public class PullRequestHandler : IGitHubEventHandler
 
     private async Task<global::Discord.Embed> BuildPrEmbedAsync(PullRequest pr, Repository repo, string action, CancellationToken ct = default)
     {
-        var descOverride = action is "opened" or "reopened" or "ready_for_review"
-            ? await (_summary?.SummarizeAsync(pr.Body, ct) ?? Task.FromResult<string?>(null))
-            : null;
+        string? descOverride = null;
+        if (action is "opened" or "reopened" or "ready_for_review" && _summary != null)
+        {
+            var (status, text) = await _summary.SummarizeAsync(pr.Body, ct);
+            if (status == PrSummaryService.SummarizeResult.Ok) descOverride = text;
+        }
 
         return EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
             openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),

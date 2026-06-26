@@ -269,9 +269,12 @@ public class DiscordBotService : IHostedService
             };
 
             var action = ghPr.EmbedAction();
-            var descOverride = action is "opened" or "reopened" or "ready_for_review"
-                ? await (_summary?.SummarizeAsync(ghPr.Body, ct) ?? Task.FromResult<string?>(null))
-                : null;
+            string? descOverride = null;
+            if (action is "opened" or "reopened" or "ready_for_review" && _summary != null)
+            {
+                var (status, text) = await _summary.SummarizeAsync(ghPr.Body, ct);
+                if (status == PrSummaryService.SummarizeResult.Ok) descOverride = text;
+            }
 
             return EmbedBuilders.PrEmbed(pr, repo, action, _userMap,
                 openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),

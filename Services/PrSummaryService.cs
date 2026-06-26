@@ -22,13 +22,15 @@ public class PrSummaryService
         _http.DefaultRequestHeaders.Add("X-Title", "GithubBot");
     }
 
+    public enum SummarizeResult { Ok, TooShort, ApiError }
+
     /// <summary>
-    /// Summarizes a PR description. Returns null if body is too short or summarization fails.
+    /// Summarizes a PR description. Returns (Ok, text), (TooShort, null), or (ApiError, null).
     /// </summary>
-    public async Task<string?> SummarizeAsync(string? body, CancellationToken ct = default)
+    public async Task<(SummarizeResult Status, string? Text)> SummarizeAsync(string? body, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(body) || body.Length < MinBodyLength)
-            return null;
+            return (SummarizeResult.TooShort, null);
 
         try
         {
@@ -53,7 +55,7 @@ public class PrSummaryService
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("[PrSummary] OpenRouter request failed: {Status}", response.StatusCode);
-                return null;
+                return (SummarizeResult.ApiError, null);
             }
 
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
@@ -63,12 +65,14 @@ public class PrSummaryService
                 .GetProperty("content")
                 .GetString();
 
-            return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+            return string.IsNullOrWhiteSpace(text)
+                ? (SummarizeResult.ApiError, null)
+                : (SummarizeResult.Ok, text.Trim());
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[PrSummary] Summarization failed");
-            return null;
+            return (SummarizeResult.ApiError, null);
         }
     }
 }
