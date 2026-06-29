@@ -258,7 +258,6 @@ public class AdoWorkItemHandler
         var stored = _workItemMap.Get(wi.Id);
         if (stored != null)
         {
-            // Patch only color, State, and Assigned To to preserve original embed formatting
             var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
                 : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
             await _discord.PatchWorkItemEmbedAsync(channelId, stored.MessageId, wi.Color, wi.State, assignedTo);
@@ -542,7 +541,7 @@ public class AdoWorkItemHandler
             Url:              _adoApi.BuildWorkItemUrl(id),
             Color:            color);
 
-        // Already tracked — patch only color, State, and Assigned To to preserve original formatting
+        // Already tracked — patch color, state, and assigned to
         if (_workItemMap.Get(id) is { } existing)
         {
             if (existing.MessageId != 0)
@@ -591,25 +590,6 @@ public class AdoWorkItemHandler
 
         _logger.LogInformation("[ADO] Manually tracked work item #{Id}", id);
         return $"✅ Ticket #{id} is now tracked.";
-    }
-
-    // ── /updatetrackedcomments ───────────────────────────────────────────────
-
-    public async Task<(int updated, int failed)> RefreshAllTrackedAsync(CancellationToken ct = default)
-    {
-        var ids = _workItemMap.GetAll().Keys.Select(k => int.TryParse(k, out var i) ? i : 0).Where(i => i > 0).ToList();
-        int updated = 0, failed = 0;
-        foreach (var id in ids)
-        {
-            try
-            {
-                var result = await TrackWorkItemAsync(id, ct);
-                if (result.StartsWith("✅") || result.Contains("refreshed")) updated++;
-                else failed++;
-            }
-            catch { failed++; }
-        }
-        return (updated, failed);
     }
 
     // ── /untrackticket ───────────────────────────────────────────────────────

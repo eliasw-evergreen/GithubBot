@@ -450,10 +450,10 @@ public class DiscordBotService : IHostedService
     }
 
     /// <summary>
-    /// Patches a work item embed in place — updates only color, State field, and Assigned To field.
-    /// All other fields (description, created by, bug fields, etc.) are preserved from the existing embed.
+    /// Patches color, state, and assigned-to on a work item embed, preserving all other fields.
     /// </summary>
-    public async Task PatchWorkItemEmbedAsync(ulong channelId, ulong messageId, Color color, string? state, string? assignedTo)
+    public async Task PatchWorkItemEmbedAsync(ulong channelId, ulong messageId,
+        Color color, string? state, string? assignedTo)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return;
@@ -479,12 +479,13 @@ public class DiscordBotService : IHostedService
 
         foreach (var field in src.Fields)
         {
-            if (field.Name == "State" && state != null)
-                builder.AddField("State", state, inline: field.Inline);
-            else if (field.Name == "Assigned To" && assignedTo != null)
-                builder.AddField("Assigned To", assignedTo, inline: field.Inline);
-            else
-                builder.AddField(field.Name, field.Value, field.Inline);
+            var value = field.Name switch
+            {
+                "State"       => state       ?? field.Value,
+                "Assigned To" => assignedTo  ?? field.Value,
+                _             => field.Value,
+            };
+            builder.AddField(field.Name, value, field.Inline);
         }
 
         await msg.ModifyAsync(props => props.Embeds = new[] { builder.Build() });
