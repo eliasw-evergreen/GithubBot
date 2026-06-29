@@ -217,6 +217,8 @@ public class AdoWorkItemHandler
     {
         if (!TryGetChannel(out var channelId)) return;
 
+        _logger.LogInformation("[ADO] workitem.commented raw payload: {Payload}", payload.GetRawText());
+
         var resource = payload.TryGetProperty("resource", out var r) ? r : default;
         if (resource.ValueKind == JsonValueKind.Undefined) return;
 
