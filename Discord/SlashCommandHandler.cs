@@ -61,7 +61,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v23";
+    private const string CommandsVersion = "v24";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -190,6 +190,16 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
+                    .WithName("updatetrackedprs")
+                    .WithDescription("Re-fetch and edit all tracked PR embeds in place")
+                    .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("updatetrackedcomments")
+                    .WithDescription("Re-fetch and edit all tracked work item embeds in place")
+                    .Build(),
+
+                new SlashCommandBuilder()
                     .WithName("givemeapr")
                     .WithDescription("Assign yourself to review a random open PR you haven't authored or commented on")
                     .Build(),
@@ -300,6 +310,12 @@ public class SlashCommandHandler
                 break;
             case "summarizepr":
                 await HandleSummarizePr(command);
+                break;
+            case "updatetrackedprs":
+                await HandleUpdateTrackedPrs(command);
+                break;
+            case "updatetrackedcomments":
+                await HandleUpdateTrackedComments(command);
                 break;
             case "givemeapr":
                 await HandleGiveMeAPr(command);
@@ -495,11 +511,13 @@ public class SlashCommandHandler
                 "`/trackpr` — Manually track an existing GitHub PR\n" +
                 "`/untrackpr` — Stop tracking a PR, delete embed and archive thread\n" +
                 "`/summarizepr` — Summarize a tracked PR's description in the embed\n" +
+                "`/updatetrackedprs` — Re-fetch and edit all tracked PR embeds in place\n" +
                 "`/prroulette` — Assign reviewers to a PR, or balance across all open PRs\n" +
                 "`/givemeapr` — Get assigned to a random open PR you haven't reviewed")
             .AddField("Tickets",
                 "`/trackticket` — Manually track an existing ADO work item\n" +
                 "`/untrackticket` — Stop tracking a ticket, delete embed and archive thread\n" +
+                "`/updatetrackedcomments` — Re-fetch and edit all tracked work item embeds in place\n" +
                 "`/unassigned` — List ADO tickets with no assignee")
             .AddField("Scores",
                 "`/score [user]` — Show your score and stats, or another user's\n" +
@@ -1089,6 +1107,92 @@ public class SlashCommandHandler
 
         await discord.EditMessageAsync(channel.Id, stored.MessageId, originalMsg.Content, embed);
         await command.ModifyOriginalResponseAsync(m => m.Content = $"✅ Summarized PR #{ghPr.Number}.");
+    }
+
+    private async Task HandleUpdateTrackedPrs(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        if (_gitHub == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "GitHub PAT is not configured.");
+            return;
+        }
+
+        var discord = _services.GetRequiredService<DiscordBotService>();
+        var channel = await discord.GetChannelAsync();
+        if (channel == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "PR channel is not configured.");
+            return;
+        }
+
+        int updated = 0, failed = 0, skipped = 0;
+        foreach (var (nodeId, entry) in _prMap.GetAll())
+        {
+            if (entry.MessageId == 0 || string.IsNullOrEmpty(entry.RepoFullName) || entry.PrNumber == null)
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                var ghPr = await _gitHub.GetPullRequestAsync(entry.RepoFullName, entry.PrNumber.Value);
+                if (ghPr == null) { failed++; continue; }
+
+                var repoName = entry.RepoFullName.Split('/').Last();
+                var pr = new GithubBot.Models.PullRequest
+                {
+                    NodeId  = nodeId,
+                    Number  = ghPr.Number,
+                    Title   = ghPr.Title ?? $"PR #{ghPr.Number}",
+                    HtmlUrl = ghPr.HtmlUrl ?? $"https://github.com/{entry.RepoFullName}/pull/{entry.PrNumber}",
+                    User    = new GithubBot.Models.GitHubUser { Login = ghPr.UserLogin ?? "unknown" },
+                    Draft   = ghPr.Draft,
+                    Body    = ghPr.Body,
+                    Head    = new GithubBot.Models.Branch { Ref = ghPr.HeadRef ?? "" },
+                    Base    = new GithubBot.Models.Branch { Ref = ghPr.BaseRef ?? "" },
+                    Merged  = ghPr.Merged,
+                };
+                var repo = new GithubBot.Models.Repository
+                {
+                    FullName = entry.RepoFullName,
+                    Name     = repoName,
+                    HtmlUrl  = $"https://github.com/{entry.RepoFullName}",
+                };
+
+                var embed = EmbedBuilders.PrEmbed(pr, repo, ghPr.EmbedAction(), _userMap,
+                    openedReaction:           _prefs.ResolveReaction("opened",             _config["Reactions:Opened"]),
+                    reopenedReaction:         _prefs.ResolveReaction("reopened",           _config["Reactions:Reopened"]),
+                    readyForReviewReaction:   _prefs.ResolveReaction("ready_for_review",   _config["Reactions:ReadyForReview"]),
+                    convertedToDraftReaction: _prefs.ResolveReaction("converted_to_draft", _config["Reactions:ConvertedToDraft"]),
+                    mergedReaction:           _prefs.ResolveReaction("merged",             _config["Reactions:Merged"]),
+                    closedReaction:           _prefs.ResolveReaction("closed",             _config["Reactions:Closed"]),
+                    descMaxLines:             _prefs.ResolvePrDescMaxLines());
+
+                var originalMsg = await discord.GetMessageAsync(channel.Id, entry.MessageId);
+                if (originalMsg == null) { failed++; continue; }
+
+                await discord.EditMessageAsync(channel.Id, entry.MessageId, originalMsg.Content, embed);
+                updated++;
+            }
+            catch { failed++; }
+        }
+
+        await command.ModifyOriginalResponseAsync(m => m.Content =
+            $"✅ PRs updated: {updated} edited, {failed} failed, {skipped} skipped (missing repo info).");
+    }
+
+    private async Task HandleUpdateTrackedComments(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        var handler = _services.GetRequiredService<AdoWorkItemHandler>();
+        var (updated, failed) = await handler.RefreshAllTrackedAsync();
+
+        await command.ModifyOriginalResponseAsync(m => m.Content =
+            $"✅ Work items updated: {updated} edited, {failed} failed.");
     }
 
     private async Task HandleGiveMeAPr(SocketSlashCommand command)

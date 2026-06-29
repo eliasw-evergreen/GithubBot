@@ -106,7 +106,7 @@ public class AdoWorkItemHandler
 
             var editEmbed = new EmbedBuilder()
                 .WithTitle($"[#{wi.Id}] ✏️ Comment Edited on {TypeEmoji(wi.WorkItemType).emoji}{(wi.Title != null ? $": {wi.Title}" : "")}")
-                .WithColor(new Color(0x5865F2u))
+                .WithColor(StateColor(wi.State))
                 .WithUrl(wi.Url);
             if (!string.IsNullOrWhiteSpace(plain)) editEmbed.WithDescription(plain);
             if (!string.IsNullOrEmpty(wi.ChangedByEmail))
@@ -207,7 +207,7 @@ public class AdoWorkItemHandler
 
         var embed = new EmbedBuilder()
             .WithTitle($"[#{wi.Id}] ✏️ {TypeEmoji(wi.WorkItemType).emoji} Updated{(wi.Title != null ? $": {wi.Title}" : "")}")
-            .WithColor(new Color(0x5865F2))
+            .WithColor(StateColor(wi.State))
             .WithUrl(wi.Url);
 
         foreach (var (label, value) in fieldLines)
@@ -285,6 +285,7 @@ public class AdoWorkItemHandler
         var workItemId = resource.TryGetProperty("id", out var wiId) ? wiId.GetInt32() : 0;
         var fields = resource.TryGetProperty("fields", out var f) ? f : default;
         var commentText    = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.History") : null;
+        var state          = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.State") : null;
         var title          = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.Title") : null;
         var workItemType   = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.WorkItemType") : null;
         var commenterEmail = fields.ValueKind == JsonValueKind.Object ? Email(fields, "System.ChangedBy") : null;
@@ -309,7 +310,7 @@ public class AdoWorkItemHandler
 
         var embed = new EmbedBuilder()
             .WithTitle(embedTitle)
-            .WithColor(isEdit ? new Color(0x5865F2u) : new Color(0x57F287u))
+            .WithColor(StateColor(state))
             .WithUrl(BuildWorkItemUrl(payload, workItemId));
 
         if (!string.IsNullOrWhiteSpace(plain))
@@ -525,7 +526,7 @@ public class AdoWorkItemHandler
         if (items.Count == 0) return $"Ticket #{id} not found in ADO.";
 
         var item = items[0];
-        var (color, _) = TypeEmoji(item.WorkItemType);
+        var color = StateColor(item.State);
         var assignedEmail = ExtractEmail(item.AssignedTo);
         var wi = new WorkItemInfo(
             Id:               id,
@@ -590,6 +591,25 @@ public class AdoWorkItemHandler
 
         _logger.LogInformation("[ADO] Manually tracked work item #{Id}", id);
         return $"✅ Ticket #{id} is now tracked.";
+    }
+
+    // ── /updatetrackedcomments ───────────────────────────────────────────────
+
+    public async Task<(int updated, int failed)> RefreshAllTrackedAsync(CancellationToken ct = default)
+    {
+        var ids = _workItemMap.GetAll().Keys.Select(k => int.TryParse(k, out var i) ? i : 0).Where(i => i > 0).ToList();
+        int updated = 0, failed = 0;
+        foreach (var id in ids)
+        {
+            try
+            {
+                var result = await TrackWorkItemAsync(id, ct);
+                if (result.StartsWith("✅") || result.Contains("refreshed")) updated++;
+                else failed++;
+            }
+            catch { failed++; }
+        }
+        return (updated, failed);
     }
 
     // ── /untrackticket ───────────────────────────────────────────────────────
@@ -668,7 +688,7 @@ public class AdoWorkItemHandler
                  resource.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0;
 
         var assignedEmail  = Email(fields, "System.AssignedTo");
-        var (color, _)     = TypeEmoji(Str(fields, "System.WorkItemType"));
+        var color          = StateColor(Str(fields, "System.State"));
 
         // Register display name → Discord mappings for all identity fields we encounter
         foreach (var key in new[] { "System.AssignedTo", "System.CreatedBy", "System.ChangedBy" })
@@ -758,12 +778,21 @@ public class AdoWorkItemHandler
 
     private static (Color color, string emoji) TypeEmoji(string? type) => type switch
     {
-        "Bug"        => (Color.Red,       "🐛"),
-        "Task"       => (Color.Blue,      "✅"),
-        "User Story" => (Color.Green,     "📖"),
-        "Epic"       => (Color.Purple,    "🏔"),
-        "Feature"    => (Color.Orange,    "⭐"),
-        _            => (Color.LightGrey, "📋"),
+        "Bug"        => (Color.Default, "🐛"),
+        "Task"       => (Color.Default, "✅"),
+        "User Story" => (Color.Default, "📖"),
+        "Epic"       => (Color.Default, "🏔"),
+        "Feature"    => (Color.Default, "⭐"),
+        _            => (Color.Default, "📋"),
+    };
+
+    private static Color StateColor(string? state) => state?.ToLowerInvariant() switch
+    {
+        "to do"   or "todo"   => Color.LightGrey,
+        "doing"   or "active" or "in progress" => new Color(0x5865F2u),
+        "testing" or "in review"               => new Color(0xFEE75Cu),
+        "done"    or "resolved" or "closed"    => Color.Green,
+        _                                      => Color.LightGrey,
     };
 
     private static string? Str(JsonElement fields, string key)
