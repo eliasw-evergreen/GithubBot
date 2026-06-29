@@ -548,7 +548,7 @@ public class AdoWorkItemHandler
             if (existing.MessageId != 0)
             {
                 var refreshed = BuildBaseEmbed(wi, color);
-                AddStandardFields(refreshed, wi, showDescription: false);
+                AddStandardFields(refreshed, wi, showDescription: true);
                 await _discord.EditMessageAsync(channelId, existing.MessageId, null, refreshed.Build());
                 existing.Title          = wi.Title;
                 existing.AssignedToEmail = wi.AssignedToEmail;
