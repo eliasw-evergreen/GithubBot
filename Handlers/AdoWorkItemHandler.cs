@@ -94,18 +94,15 @@ public class AdoWorkItemHandler
             var plain = StripHtml(commentHtml);
             if (plain.Length > 1000) plain = plain[..1000] + "…";
 
-            _logger.LogInformation("[ADO] comment edit raw resource keys: {Keys}", string.Join(", ", resource.EnumerateObject().Select(p => p.Name)));
-            _logger.LogInformation("[ADO] comment edit full payload: {Payload}", payload.GetRawText());
-
             int? commentId = null;
-            int commentVersion = 2; // arrived via updated = edit
-            if (resource.TryGetProperty("commentVersionRef", out var cvr))
+            int commentVersion = 2;
+            var revisionEl = resource.TryGetProperty("revision", out var rev) ? rev : default;
+            if (revisionEl.ValueKind != JsonValueKind.Undefined &&
+                revisionEl.TryGetProperty("commentVersionRef", out var cvr))
             {
                 if (cvr.TryGetProperty("commentId", out var cid)) commentId = cid.GetInt32();
                 if (cvr.TryGetProperty("version", out var ver)) commentVersion = ver.GetInt32();
             }
-
-            _logger.LogInformation("[ADO] comment edit commentId={CommentId} version={Version}", commentId, commentVersion);
 
             var editEmbed = new EmbedBuilder()
                 .WithTitle($"[#{wi.Id}] ✏️ Comment Edited on {TypeEmoji(wi.WorkItemType).emoji}{(wi.Title != null ? $": {wi.Title}" : "")}")
