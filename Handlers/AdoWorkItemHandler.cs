@@ -288,14 +288,14 @@ public class AdoWorkItemHandler
             }
         }
 
-        // New comment — post and track the message ID
+        // New comment (or untracked edit) — post and track the message ID
         var mentionedPings = ExtractMentionNames(commentText)
             .Select(name => _userMap.AdoDisplayNameToDiscord(name))
             .Where(d => d != null)
             .Distinct()
             .Select(d => $"<@{d}>")
             .ToList();
-        var mentionContent = mentionedPings.Count > 0 ? string.Join(" ", mentionedPings) : null;
+        var mentionContent = !isEdit && mentionedPings.Count > 0 ? string.Join(" ", mentionedPings) : null;
 
         var msg = await _discord.SendMessageAsync(target, mentionContent, embed.Build(), ct);
         if (msg != null && commentId.HasValue)
