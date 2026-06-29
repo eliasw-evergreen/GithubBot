@@ -61,7 +61,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v24";
+    private const string CommandsVersion = "v25";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -195,8 +195,8 @@ public class SlashCommandHandler
                     .Build(),
 
                 new SlashCommandBuilder()
-                    .WithName("updatetrackedcomments")
-                    .WithDescription("Re-fetch and edit all tracked work item embeds in place")
+                    .WithName("updatetrackedtickets")
+                    .WithDescription("Re-fetch and edit all tracked ticket embeds in place")
                     .Build(),
 
                 new SlashCommandBuilder()
@@ -314,8 +314,8 @@ public class SlashCommandHandler
             case "updatetrackedprs":
                 await HandleUpdateTrackedPrs(command);
                 break;
-            case "updatetrackedcomments":
-                await HandleUpdateTrackedComments(command);
+            case "updatetrackedtickets":
+                await HandleUpdateTrackedTickets(command);
                 break;
             case "givemeapr":
                 await HandleGiveMeAPr(command);
@@ -517,7 +517,7 @@ public class SlashCommandHandler
             .AddField("Tickets",
                 "`/trackticket` — Manually track an existing ADO work item\n" +
                 "`/untrackticket` — Stop tracking a ticket, delete embed and archive thread\n" +
-                "`/updatetrackedcomments` — Re-fetch and edit all tracked work item embeds in place\n" +
+                "`/updatetrackedtickets` — Re-fetch and edit all tracked work item embeds in place\n" +
                 "`/unassigned` — List ADO tickets with no assignee")
             .AddField("Scores",
                 "`/score [user]` — Show your score and stats, or another user's\n" +
@@ -1184,7 +1184,7 @@ public class SlashCommandHandler
             $"✅ PRs updated: {updated} edited, {failed} failed, {skipped} skipped (missing repo info).");
     }
 
-    private async Task HandleUpdateTrackedComments(SocketSlashCommand command)
+    private async Task HandleUpdateTrackedTickets(SocketSlashCommand command)
     {
         await command.DeferAsync(ephemeral: true);
 

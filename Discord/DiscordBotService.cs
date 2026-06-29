@@ -77,7 +77,7 @@ public class DiscordBotService : IHostedService
         _logger.LogInformation("Logged in as {User}", _client.CurrentUser?.Username ?? "unknown");
         _ = Task.Run(_slashHandler.RegisterAsync);
         _ = Task.Run(BackfillPrAuthorsAsync);
-        _ = Task.Run(BackfillPrDraftStatusAsync);
+
         return Task.CompletedTask;
     }
 
@@ -120,47 +120,6 @@ public class DiscordBotService : IHostedService
             _logger.LogInformation("[Backfill] Filled AuthorLogin for {Count} PRs", filled);
     }
 
-    private async Task BackfillPrDraftStatusAsync()
-    {
-        if (_gitHub == null) return;
-
-        // Group open tracked PRs by repo so we can batch per repo
-        var openByRepo = _prMap.GetAll()
-            .Where(kv => kv.Value.ClosedAt == null && !string.IsNullOrEmpty(kv.Value.RepoFullName) && kv.Value.PrNumber != null)
-            .GroupBy(kv => kv.Value.RepoFullName!)
-            .ToList();
-
-        if (openByRepo.Count == 0) return;
-
-        _logger.LogInformation("[Backfill] Syncing draft status for open PRs across {RepoCount} repo(s)", openByRepo.Count);
-        int updated = 0;
-
-        foreach (var repoGroup in openByRepo)
-        {
-            try
-            {
-                var openPrs = await _gitHub.GetOpenPullRequestsAsync(repoGroup.Key);
-                var byNumber = openPrs.ToDictionary(p => p.Number);
-
-                foreach (var (nodeId, entry) in repoGroup)
-                {
-                    if (!byNumber.TryGetValue(entry.PrNumber!.Value, out var ghPr)) continue;
-                    if (entry.IsDraft == ghPr.Draft) continue;
-
-                    entry.IsDraft = ghPr.Draft;
-                    _prMap.Set(nodeId, entry);
-                    updated++;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[Backfill] Draft status sync failed for repo {Repo}", repoGroup.Key);
-            }
-        }
-
-        if (updated > 0)
-            _logger.LogInformation("[Backfill] Updated draft status for {Count} PR(s)", updated);
-    }
 
     public async Task BackfillPrCommentsAsync(ulong threadId, string repoFullName, int prNumber, string prTitle, string prHtmlUrl, CancellationToken ct = default)
     {
