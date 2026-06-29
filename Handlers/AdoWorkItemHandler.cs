@@ -217,26 +217,37 @@ public class AdoWorkItemHandler
     {
         if (!TryGetChannel(out var channelId)) return;
 
-        _logger.LogInformation("[ADO] workitem.commented raw payload: {Payload}", payload.GetRawText());
-
         var resource = payload.TryGetProperty("resource", out var r) ? r : default;
         if (resource.ValueKind == JsonValueKind.Undefined) return;
 
-        // resource.id is the work item ID; comment text is in fields["System.History"]
         var workItemId = resource.TryGetProperty("id", out var wiId) ? wiId.GetInt32() : 0;
         var fields = resource.TryGetProperty("fields", out var f) ? f : default;
-        var commentText   = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.History") : null;
-        var title         = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.Title") : null;
-        var workItemType  = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.WorkItemType") : null;
+        var commentText    = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.History") : null;
+        var title          = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.Title") : null;
+        var workItemType   = fields.ValueKind == JsonValueKind.Object ? Str(fields, "System.WorkItemType") : null;
         var commenterEmail = fields.ValueKind == JsonValueKind.Object ? Email(fields, "System.ChangedBy") : null;
+
+        // commentVersionRef.commentId is stable across edits; version > 1 means edited
+        int? commentId = null;
+        int commentVersion = 1;
+        if (resource.TryGetProperty("commentVersionRef", out var cvr))
+        {
+            if (cvr.TryGetProperty("commentId", out var cid)) commentId = cid.GetInt32();
+            if (cvr.TryGetProperty("version", out var ver)) commentVersion = ver.GetInt32();
+        }
 
         var plain = string.IsNullOrWhiteSpace(commentText) ? null : StripHtml(commentText);
         if (plain?.Length > 1000) plain = plain[..1000] + "…";
 
         var emoji = TypeEmoji(workItemType).emoji;
+        var isEdit = commentVersion > 1;
+        var embedTitle = isEdit
+            ? $"[#{workItemId}] ✏️ Comment Edited on {emoji}{(title != null ? $": {title}" : "")}"
+            : $"[#{workItemId}] 💬 Comment on {emoji}{(title != null ? $": {title}" : "")}";
+
         var embed = new EmbedBuilder()
-            .WithTitle($"[#{workItemId}] 💬 Comment on {emoji}{(title != null ? $": {title}" : "")}")
-            .WithColor(new Color(0x57F287))
+            .WithTitle(embedTitle)
+            .WithColor(isEdit ? new Color(0x5865F2u) : new Color(0x57F287u))
             .WithUrl(BuildWorkItemUrl(payload, workItemId));
 
         if (!string.IsNullOrWhiteSpace(plain))
@@ -246,25 +257,16 @@ public class AdoWorkItemHandler
         {
             var d = _userMap.AdoToDiscord(commenterEmail);
             _logger.LogInformation("[ADO] Comment by email={Email} resolved={Resolved}", commenterEmail, d ?? "null");
-            // Register display name so @mention lookups work
             if (fields.ValueKind == JsonValueKind.Object && fields.TryGetProperty("System.ChangedBy", out var changedByEl))
                 TryRegisterIdentityString(changedByEl);
             embed.AddField("By", d != null ? $"<@{d}>" : commenterEmail, inline: true);
         }
 
-        if (!string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
+        if (!isEdit && !string.IsNullOrEmpty(commenterEmail) && _userMap.AdoToDiscord(commenterEmail) is string commentDiscordId)
             _scores.Award(commentDiscordId, ScoreCategory.TicketComment);
 
-        // Ping anyone @mentioned in the comment
-        var mentionedPings = ExtractMentionNames(commentText)
-            .Select(name => _userMap.AdoDisplayNameToDiscord(name))
-            .Where(d => d != null)
-            .Distinct()
-            .Select(d => $"<@{d}>")
-            .ToList();
-        var mentionContent = mentionedPings.Count > 0 ? string.Join(" ", mentionedPings) : null;
-
-        _logger.LogInformation("[ADO] Work item commented #{Id}", workItemId);
+        _logger.LogInformation("[ADO] Work item {Action} #{Id} commentId={CommentId} version={Version}",
+            isEdit ? "comment edited" : "commented", workItemId, commentId, commentVersion);
 
         var wi = new WorkItemInfo(workItemId, title, workItemType, null, null, null, null, null, null, null,
             BuildWorkItemUrl(payload, workItemId), Color.Default);
@@ -275,7 +277,36 @@ public class AdoWorkItemHandler
         try { target = await ResolveThreadAsync(channelId, wi, ct); }
         finally { wiLock.Release(); }
 
-        await _discord.SendMessageAsync(target, mentionContent, embed.Build(), ct);
+        // If this is an edit and we have the original Discord message tracked, edit it in place
+        if (isEdit && commentId.HasValue)
+        {
+            var stored = _workItemMap.Get(workItemId);
+            if (stored != null && stored.CommentMessages.TryGetValue(commentId.Value, out var existingMsgId))
+            {
+                await _discord.EditMessageAsync(target, existingMsgId, null, embed.Build());
+                return;
+            }
+        }
+
+        // New comment — post and track the message ID
+        var mentionedPings = ExtractMentionNames(commentText)
+            .Select(name => _userMap.AdoDisplayNameToDiscord(name))
+            .Where(d => d != null)
+            .Distinct()
+            .Select(d => $"<@{d}>")
+            .ToList();
+        var mentionContent = mentionedPings.Count > 0 ? string.Join(" ", mentionedPings) : null;
+
+        var msg = await _discord.SendMessageAsync(target, mentionContent, embed.Build(), ct);
+        if (msg != null && commentId.HasValue)
+        {
+            var stored = _workItemMap.Get(workItemId);
+            if (stored != null)
+            {
+                stored.CommentMessages[commentId.Value] = msg.Id;
+                _workItemMap.Set(workItemId, stored);
+            }
+        }
     }
 
     // ── workitem.deleted ────────────────────────────────────────────────────

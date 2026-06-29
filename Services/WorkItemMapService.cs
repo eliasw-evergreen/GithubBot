@@ -9,6 +9,7 @@ public class WorkItemMapEntry
     public string? Title { get; set; }
     public string? WorkItemType { get; set; }
     public string? AssignedToEmail { get; set; }
+    public Dictionary<int, ulong> CommentMessages { get; set; } = [];
 }
 
 public class WorkItemMapService
