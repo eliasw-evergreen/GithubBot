@@ -450,10 +450,12 @@ public class DiscordBotService : IHostedService
     }
 
     /// <summary>
-    /// Patches color, state, and assigned-to on a work item embed, preserving all other fields.
+    /// Patches a work item embed in place. ADO values override matching fields; fields not present
+    /// in the ADO data are preserved from the existing embed. New fields are appended.
     /// </summary>
     public async Task PatchWorkItemEmbedAsync(ulong channelId, ulong messageId,
-        Color color, string? state, string? assignedTo)
+        Color color, string? state, string? area, string? assignedTo, string? createdBy,
+        string? description, string? reproSteps, string? expectedOutcome, string? actualOutcome)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return;
@@ -464,11 +466,21 @@ public class DiscordBotService : IHostedService
         var src = msg.Embeds.FirstOrDefault();
         if (src == null) return;
 
+        // Build overrides map — only non-null ADO values replace existing embed fields
+        var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (state           != null) overrides["State"]              = state;
+        if (area            != null) overrides["Area"]               = area;
+        if (assignedTo      != null) overrides["Assigned To"]        = assignedTo;
+        if (createdBy       != null) overrides["Created By"]         = createdBy;
+        if (reproSteps      != null) overrides["Steps to Reproduce"] = reproSteps;
+        if (expectedOutcome != null) overrides["Expected Outcome"]   = expectedOutcome;
+        if (actualOutcome   != null) overrides["Actual Outcome"]     = actualOutcome;
+
         var builder = new EmbedBuilder()
             .WithColor(color)
             .WithTitle(src.Title)
             .WithUrl(src.Url)
-            .WithDescription(src.Description)
+            .WithDescription(description ?? src.Description)
             .WithFooter(src.Footer?.Text)
             .WithImageUrl(src.Image?.Url);
 
@@ -477,16 +489,19 @@ public class DiscordBotService : IHostedService
         if (src.Timestamp.HasValue)
             builder.WithTimestamp(src.Timestamp.Value);
 
+        // Update existing fields with ADO overrides, preserve the rest
+        var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in src.Fields)
         {
-            var value = field.Name switch
-            {
-                "State"       => state       ?? field.Value,
-                "Assigned To" => assignedTo  ?? field.Value,
-                _             => field.Value,
-            };
+            seenFields.Add(field.Name);
+            var value = overrides.TryGetValue(field.Name, out var ov) ? ov : field.Value;
             builder.AddField(field.Name, value, field.Inline);
         }
+
+        // Append any ADO fields that were not in the original embed
+        foreach (var (name, value) in overrides)
+            if (!seenFields.Contains(name))
+                builder.AddField(name, value, inline: true);
 
         await msg.ModifyAsync(props => props.Embeds = new[] { builder.Build() });
     }

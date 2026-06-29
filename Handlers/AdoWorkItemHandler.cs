@@ -260,7 +260,18 @@ public class AdoWorkItemHandler
         {
             var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
                 : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
-            await _discord.PatchWorkItemEmbedAsync(channelId, stored.MessageId, wi.Color, wi.State, assignedTo);
+            var createdBy = string.IsNullOrEmpty(wi.CreatedByEmail) ? null
+                : _userMap.AdoToDiscord(wi.CreatedByEmail) is string cbd ? $"<@{cbd}>" : wi.CreatedByEmail;
+            var desc = string.IsNullOrWhiteSpace(wi.Description) ? null
+                : StripHtml(wi.Description) is { Length: > 0 } d ? (d.Length > 300 ? d[..300] + "…" : d) : null;
+            var reproSteps = string.IsNullOrWhiteSpace(wi.ReproSteps) ? null
+                : StripHtml(wi.ReproSteps) is { Length: > 0 } rs ? (rs.Length > 500 ? rs[..497] + "…" : rs) : null;
+            var expected = string.IsNullOrWhiteSpace(wi.ExpectedOutcome) ? null
+                : StripHtml(wi.ExpectedOutcome) is { Length: > 0 } eo ? (eo.Length > 500 ? eo[..497] + "…" : eo) : null;
+            var actual = string.IsNullOrWhiteSpace(wi.ActualOutcome) ? null
+                : StripHtml(wi.ActualOutcome) is { Length: > 0 } ao ? (ao.Length > 500 ? ao[..497] + "…" : ao) : null;
+            await _discord.PatchWorkItemEmbedAsync(channelId, stored.MessageId,
+                wi.Color, wi.State, wi.AreaPath, assignedTo, createdBy, desc, reproSteps, expected, actual);
 
             if (wi.Title != null && wi.Title != stored.Title)
                 stored.Title = wi.Title;
@@ -526,7 +537,8 @@ public class AdoWorkItemHandler
 
         var item = items[0];
         var color = StateColor(item.State);
-        var assignedEmail = ExtractEmail(item.AssignedTo);
+        var assignedEmail  = ExtractEmail(item.AssignedTo);
+        var createdByEmail = ExtractEmail(item.CreatedBy);
         var wi = new WorkItemInfo(
             Id:               id,
             Title:            item.Title,
@@ -536,19 +548,33 @@ public class AdoWorkItemHandler
             Description:      item.Description,
             AssignedToEmail:  assignedEmail,
             AssignedToDiscord: !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
-            CreatedByEmail:   null,
+            CreatedByEmail:   createdByEmail,
             ChangedByEmail:   null,
             Url:              _adoApi.BuildWorkItemUrl(id),
-            Color:            color);
+            Color:            color,
+            ReproSteps:       item.ReproSteps,
+            ExpectedOutcome:  item.ExpectedOutcome,
+            ActualOutcome:    item.ActualOutcome);
 
-        // Already tracked — patch color, state, and assigned to
+        // Already tracked — patch all fields from ADO
         if (_workItemMap.Get(id) is { } existing)
         {
             if (existing.MessageId != 0)
             {
                 var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
                     : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
-                await _discord.PatchWorkItemEmbedAsync(channelId, existing.MessageId, color, wi.State, assignedTo);
+                var createdBy = string.IsNullOrEmpty(wi.CreatedByEmail) ? null
+                    : _userMap.AdoToDiscord(wi.CreatedByEmail) is string cbd ? $"<@{cbd}>" : wi.CreatedByEmail;
+                var desc = string.IsNullOrWhiteSpace(wi.Description) ? null
+                    : StripHtml(wi.Description) is { Length: > 0 } d ? (d.Length > 300 ? d[..300] + "…" : d) : null;
+                var reproSteps = string.IsNullOrWhiteSpace(wi.ReproSteps) ? null
+                    : StripHtml(wi.ReproSteps) is { Length: > 0 } rs ? (rs.Length > 500 ? rs[..497] + "…" : rs) : null;
+                var expected = string.IsNullOrWhiteSpace(wi.ExpectedOutcome) ? null
+                    : StripHtml(wi.ExpectedOutcome) is { Length: > 0 } eo ? (eo.Length > 500 ? eo[..497] + "…" : eo) : null;
+                var actual = string.IsNullOrWhiteSpace(wi.ActualOutcome) ? null
+                    : StripHtml(wi.ActualOutcome) is { Length: > 0 } ao ? (ao.Length > 500 ? ao[..497] + "…" : ao) : null;
+                await _discord.PatchWorkItemEmbedAsync(channelId, existing.MessageId,
+                    color, wi.State, wi.AreaPath, assignedTo, createdBy, desc, reproSteps, expected, actual);
                 existing.Title           = wi.Title;
                 existing.AssignedToEmail = wi.AssignedToEmail;
                 _workItemMap.Set(id, existing);
