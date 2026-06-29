@@ -159,7 +159,18 @@ public class PullRequestHandler : IGitHubEventHandler
             if (originalMsg != null)
                 await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, embed);
             stored!.IsDraft = action == "converted_to_draft";
+            stored.ReadyForReview = action == "ready_for_review";
             _prMap.Set(pr.NodeId, stored);
+
+            if (action == "ready_for_review" && stored.ThreadId is ulong rfrThreadId && rfrThreadId != 0)
+            {
+                var rfrRolePing = _prefs.ResolvePingRole(_config["Roles:PrPing"]);
+                var rfrPing = !string.IsNullOrEmpty(rfrRolePing) ? $"<@&{rfrRolePing}> " : "";
+                var rfrAuthor = _userMap.GitHubToDiscord(pr.User.Login) is string rfrDid ? $"<@{rfrDid}>" : $"**{pr.User.Login}**";
+                await _discord.SendMessageAsync(rfrThreadId,
+                    $"{rfrPing}PR #{pr.Number} by {rfrAuthor} is ready for review.", null, ct);
+            }
+
             return;
         }
 
@@ -279,9 +290,14 @@ public class PullRequestHandler : IGitHubEventHandler
 
         var stored = _prMap.Get(pr.NodeId);
 
+        // Preserve the "ready for review" title if the PR was already marked as such
+        var editAction = pr.Draft == true ? "converted_to_draft"
+            : stored?.ReadyForReview == true ? "ready_for_review"
+            : "opened";
+
         // For untracked PRs, attempt to find/create the thread. Pass the real embed so that
         // if a stub has to be posted it uses the actual PR content rather than a placeholder.
-        var embed = await BuildPrEmbedAsync(pr, repo, pr.Draft ? "converted_to_draft" : "opened", ct);
+        var embed = await BuildPrEmbedAsync(pr, repo, editAction, ct);
         await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, pr.HtmlUrl, ct, stubEmbed: embed);
 
         // Re-read stored after resolution in case it was just registered
