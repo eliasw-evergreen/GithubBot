@@ -449,6 +449,47 @@ public class DiscordBotService : IHostedService
         });
     }
 
+    /// <summary>
+    /// Patches a work item embed in place — updates only color, State field, and Assigned To field.
+    /// All other fields (description, created by, bug fields, etc.) are preserved from the existing embed.
+    /// </summary>
+    public async Task PatchWorkItemEmbedAsync(ulong channelId, ulong messageId, Color color, string? state, string? assignedTo)
+    {
+        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        if (channel == null) return;
+
+        var msg = await channel.GetMessageAsync(messageId) as IUserMessage;
+        if (msg == null) return;
+
+        var src = msg.Embeds.FirstOrDefault();
+        if (src == null) return;
+
+        var builder = new EmbedBuilder()
+            .WithColor(color)
+            .WithTitle(src.Title)
+            .WithUrl(src.Url)
+            .WithDescription(src.Description)
+            .WithFooter(src.Footer?.Text)
+            .WithImageUrl(src.Image?.Url);
+
+        if (src.Author != null)
+            builder.WithAuthor(src.Author.Value.Name, src.Author.Value.IconUrl, src.Author.Value.Url);
+        if (src.Timestamp.HasValue)
+            builder.WithTimestamp(src.Timestamp.Value);
+
+        foreach (var field in src.Fields)
+        {
+            if (field.Name == "State" && state != null)
+                builder.AddField("State", state, inline: field.Inline);
+            else if (field.Name == "Assigned To" && assignedTo != null)
+                builder.AddField("Assigned To", assignedTo, inline: field.Inline);
+            else
+                builder.AddField(field.Name, field.Value, field.Inline);
+        }
+
+        await msg.ModifyAsync(props => props.Embeds = new[] { builder.Build() });
+    }
+
     public async Task DeleteMessageAsync(ulong channelId, ulong messageId)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;

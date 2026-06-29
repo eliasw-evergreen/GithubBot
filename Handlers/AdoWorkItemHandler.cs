@@ -258,10 +258,10 @@ public class AdoWorkItemHandler
         var stored = _workItemMap.Get(wi.Id);
         if (stored != null)
         {
-            // wi has the full current state from resource.revision.fields — rebuild the embed from it
-            var updatedEmbed = BuildBaseEmbed(wi, wi.Color);
-            AddStandardFields(updatedEmbed, wi, showDescription: true);
-            await _discord.EditMessageAsync(channelId, stored.MessageId, null, updatedEmbed.Build());
+            // Patch only color, State, and Assigned To to preserve original embed formatting
+            var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
+                : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
+            await _discord.PatchWorkItemEmbedAsync(channelId, stored.MessageId, wi.Color, wi.State, assignedTo);
 
             if (wi.Title != null && wi.Title != stored.Title)
                 stored.Title = wi.Title;
@@ -542,15 +542,15 @@ public class AdoWorkItemHandler
             Url:              _adoApi.BuildWorkItemUrl(id),
             Color:            color);
 
-        // Already tracked — refresh embed and return link
+        // Already tracked — patch only color, State, and Assigned To to preserve original formatting
         if (_workItemMap.Get(id) is { } existing)
         {
             if (existing.MessageId != 0)
             {
-                var refreshed = BuildBaseEmbed(wi, color);
-                AddStandardFields(refreshed, wi, showDescription: true);
-                await _discord.EditMessageAsync(channelId, existing.MessageId, null, refreshed.Build());
-                existing.Title          = wi.Title;
+                var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
+                    : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
+                await _discord.PatchWorkItemEmbedAsync(channelId, existing.MessageId, color, wi.State, assignedTo);
+                existing.Title           = wi.Title;
                 existing.AssignedToEmail = wi.AssignedToEmail;
                 _workItemMap.Set(id, existing);
             }
