@@ -95,10 +95,7 @@ public class AdoWorkItemHandler
             if (plain.Length > 1000) plain = plain[..1000] + "…";
 
             _logger.LogInformation("[ADO] comment edit raw resource keys: {Keys}", string.Join(", ", resource.EnumerateObject().Select(p => p.Name)));
-            _logger.LogInformation("[ADO] comment edit id={Id} workItemId={WorkItemId} rev={Rev}",
-                resource.TryGetProperty("id", out var dbgId) ? dbgId.GetRawText() : "?",
-                resource.TryGetProperty("workItemId", out var dbgWiId) ? dbgWiId.GetRawText() : "?",
-                resource.TryGetProperty("rev", out var dbgRev) ? dbgRev.GetRawText() : "?");
+            _logger.LogInformation("[ADO] comment edit full payload: {Payload}", payload.GetRawText());
 
             int? commentId = null;
             int commentVersion = 2; // arrived via updated = edit
