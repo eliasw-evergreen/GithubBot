@@ -97,6 +97,10 @@ public class AdoApiService
                 var f = el.TryGetProperty("fields", out var fields_) ? fields_ : default;
                 if (f.ValueKind == JsonValueKind.Undefined) continue;
 
+                var rawAssigned = f.TryGetProperty("System.AssignedTo", out var rawA) ? rawA.GetRawText() : "(missing)";
+                var rawCreated  = f.TryGetProperty("System.CreatedBy",  out var rawC) ? rawC.GetRawText() : "(missing)";
+                _logger.LogInformation("[ADO API] identity fields — AssignedTo={A} CreatedBy={C}", rawAssigned, rawCreated);
+
                 results.Add(new AdoWorkItem(
                     Id:             el.TryGetProperty("id", out var id_) ? id_.GetInt32() : 0,
                     Title:          Str(f, "System.Title"),
