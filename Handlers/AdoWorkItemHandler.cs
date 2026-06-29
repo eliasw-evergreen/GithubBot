@@ -94,6 +94,8 @@ public class AdoWorkItemHandler
             var plain = StripHtml(commentHtml);
             if (plain.Length > 1000) plain = plain[..1000] + "…";
 
+            _logger.LogInformation("[ADO] comment edit raw resource keys: {Keys}", string.Join(", ", resource.EnumerateObject().Select(p => p.Name)));
+
             int? commentId = null;
             int commentVersion = 2; // arrived via updated = edit
             if (resource.TryGetProperty("commentVersionRef", out var cvr))
@@ -101,6 +103,8 @@ public class AdoWorkItemHandler
                 if (cvr.TryGetProperty("commentId", out var cid)) commentId = cid.GetInt32();
                 if (cvr.TryGetProperty("version", out var ver)) commentVersion = ver.GetInt32();
             }
+
+            _logger.LogInformation("[ADO] comment edit commentId={CommentId} version={Version}", commentId, commentVersion);
 
             var editEmbed = new EmbedBuilder()
                 .WithTitle($"[#{wi.Id}] ✏️ Comment Edited on {TypeEmoji(wi.WorkItemType).emoji}{(wi.Title != null ? $": {wi.Title}" : "")}")
