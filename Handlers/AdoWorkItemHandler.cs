@@ -83,6 +83,66 @@ public class AdoWorkItemHandler
         var resource = payload.GetProperty("resource");
         var changedFields = resource.TryGetProperty("fields", out var cf) ? cf : default;
 
+        // Comment edits arrive as workitem.updated with System.History changed
+        if (changedFields.ValueKind == JsonValueKind.Object &&
+            changedFields.TryGetProperty("System.History", out var historyDiff) &&
+            historyDiff.TryGetProperty("newValue", out var historyNewEl) &&
+            historyNewEl.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(historyNewEl.GetString()))
+        {
+            var commentHtml = historyNewEl.GetString()!;
+            var plain = StripHtml(commentHtml);
+            if (plain.Length > 1000) plain = plain[..1000] + "…";
+
+            int? commentId = null;
+            int commentVersion = 2; // arrived via updated = edit
+            if (resource.TryGetProperty("commentVersionRef", out var cvr))
+            {
+                if (cvr.TryGetProperty("commentId", out var cid)) commentId = cid.GetInt32();
+                if (cvr.TryGetProperty("version", out var ver)) commentVersion = ver.GetInt32();
+            }
+
+            var editEmbed = new EmbedBuilder()
+                .WithTitle($"[#{wi.Id}] ✏️ Comment Edited on {TypeEmoji(wi.WorkItemType).emoji}{(wi.Title != null ? $": {wi.Title}" : "")}")
+                .WithColor(new Color(0x5865F2u))
+                .WithUrl(wi.Url);
+            if (!string.IsNullOrWhiteSpace(plain)) editEmbed.WithDescription(plain);
+            if (!string.IsNullOrEmpty(wi.ChangedByEmail))
+            {
+                var d = _userMap.AdoToDiscord(wi.ChangedByEmail);
+                editEmbed.AddField("By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
+            }
+
+            var wiLock2 = _wiLocks.GetOrAdd(wi.Id, _ => new SemaphoreSlim(1, 1));
+            await wiLock2.WaitAsync(ct);
+            ulong editTarget;
+            try { editTarget = await ResolveThreadAsync(channelId, wi, ct); }
+            finally { wiLock2.Release(); }
+
+            if (commentId.HasValue)
+            {
+                var storedEntry = _workItemMap.Get(wi.Id);
+                if (storedEntry != null && storedEntry.CommentMessages.TryGetValue(commentId.Value, out var existingMsgId))
+                {
+                    await _discord.EditMessageAsync(editTarget, existingMsgId, null, editEmbed.Build());
+                    return;
+                }
+            }
+
+            // Not tracked — post as new and track it
+            var editMsg = await _discord.SendMessageAsync(editTarget, null, editEmbed.Build(), ct);
+            if (editMsg != null && commentId.HasValue)
+            {
+                var storedEntry = _workItemMap.Get(wi.Id);
+                if (storedEntry != null)
+                {
+                    storedEntry.CommentMessages[commentId.Value] = editMsg.Id;
+                    _workItemMap.Set(wi.Id, storedEntry);
+                }
+            }
+            return;
+        }
+
         // Fields that are always noise — changed by every event or carry no user-visible info
         var skipFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
