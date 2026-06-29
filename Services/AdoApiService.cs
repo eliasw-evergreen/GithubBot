@@ -102,8 +102,8 @@ public class AdoApiService
                     Title:          Str(f, "System.Title"),
                     WorkItemType:   Str(f, "System.WorkItemType"),
                     State:          Str(f, "System.State"),
-                    AssignedTo:     Str(f, "System.AssignedTo"),
-                    CreatedBy:      Str(f, "System.CreatedBy"),
+                    AssignedTo:     Identity(f, "System.AssignedTo"),
+                    CreatedBy:      Identity(f, "System.CreatedBy"),
                     AreaPath:       Str(f, "System.AreaPath"),
                     Url:            el.TryGetProperty("url", out var u) ? u.GetString() : null,
                     Priority:       Num(f, "Microsoft.VSTS.Common.Priority"),
@@ -262,6 +262,20 @@ public class AdoApiService
 
     private static string? Str(JsonElement el, string key)
         => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    // ADO identity fields come back as objects: { "displayName": "...", "uniqueName": "email@..." }
+    // Fall back to string format "Display Name <email@...>" for older API responses.
+    private static string? Identity(JsonElement el, string key)
+    {
+        if (!el.TryGetProperty(key, out var v)) return null;
+        if (v.ValueKind == JsonValueKind.Object)
+        {
+            if (v.TryGetProperty("uniqueName", out var un) && un.ValueKind == JsonValueKind.String) return un.GetString();
+            if (v.TryGetProperty("displayName", out var dn) && dn.ValueKind == JsonValueKind.String) return dn.GetString();
+            return null;
+        }
+        return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    }
 
     private static int? Num(JsonElement el, string key)
         => el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
