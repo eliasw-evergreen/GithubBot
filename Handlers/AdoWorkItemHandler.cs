@@ -124,6 +124,9 @@ public class AdoWorkItemHandler
             if (commentId.HasValue)
             {
                 var storedEntry = _workItemMap.Get(wi.Id);
+                _logger.LogInformation("[ADO] comment edit lookup wiId={WiId} commentId={CommentId} storedNull={Null} tracked={Tracked} allKeys={Keys}",
+                    wi.Id, commentId, storedEntry == null, storedEntry?.CommentMessages.ContainsKey(commentId.Value),
+                    storedEntry == null ? "" : string.Join(",", storedEntry.CommentMessages.Keys));
                 if (storedEntry != null && storedEntry.CommentMessages.TryGetValue(commentId.Value, out var existingMsgId))
                 {
                     await _discord.EditMessageAsync(editTarget, existingMsgId, null, editEmbed.Build());
@@ -136,6 +139,7 @@ public class AdoWorkItemHandler
             if (editMsg != null && commentId.HasValue)
             {
                 var storedEntry = _workItemMap.Get(wi.Id);
+                _logger.LogInformation("[ADO] comment edit saving commentId={CommentId} msgId={MsgId} storedNull={Null}", commentId, editMsg.Id, storedEntry == null);
                 if (storedEntry != null)
                 {
                     storedEntry.CommentMessages[commentId.Value] = editMsg.Id;
