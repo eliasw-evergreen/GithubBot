@@ -44,10 +44,21 @@ public class AdoWorkItemHandler
         if (!TryGetChannel(out var channelId)) return;
         if (!TryParseWorkItem(payload, out var wi)) return;
 
+        _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
+
+        // If already tracked (e.g. /trackticket ran first), patch rather than posting a duplicate.
+        // PatchWorkItemEmbedAsync only overrides non-null values, so fields the webhook omits are preserved.
+        if (_workItemMap.Get(wi.Id) is { MessageId: not 0 } existing)
+        {
+            var (assignedTo, createdBy, desc, reproSteps, expected, actual) = PrepareEmbedFields(wi);
+            await _discord.PatchWorkItemEmbedAsync(channelId, existing.MessageId,
+                wi.Color, wi.State, wi.AreaPath, assignedTo, createdBy, desc, reproSteps, expected, actual);
+            return;
+        }
+
         var embed = BuildBaseEmbed(wi, wi.Color);
         AddStandardFields(embed, wi, showDescription: true);
 
-        _logger.LogInformation("[ADO] Work item created #{Id} type={Type}", wi.Id, wi.WorkItemType);
         string? creatorDiscordId = !string.IsNullOrEmpty(wi.CreatedByEmail) ? _userMap.AdoToDiscord(wi.CreatedByEmail) : null;
         if (creatorDiscordId != null)
             _scores.Award(creatorDiscordId, ScoreCategory.TicketCreated);
