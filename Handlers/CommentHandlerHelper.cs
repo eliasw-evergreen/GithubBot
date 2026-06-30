@@ -10,21 +10,24 @@ internal static class CommentHandlerHelper
         string action, long commentId, Embed embed,
         DiscordBotService discord, CommentMapService commentMap)
     {
-        var entry = commentMap.Get(commentId);
-        if (entry == null) return false;
-
         if (action == "deleted")
         {
-            var original = await discord.GetMessageAsync(entry.ChannelId, entry.MessageId);
-            if (original?.Embeds.FirstOrDefault() is IEmbed existing)
-                await discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null,
-                    EmbedBuilders.MarkCommentDeleted(existing));
-            commentMap.Remove(commentId);
+            var entry = commentMap.Get(commentId);
+            if (entry != null)
+            {
+                var original = await discord.GetMessageAsync(entry.ChannelId, entry.MessageId);
+                if (original?.Embeds.FirstOrDefault() is IEmbed existing)
+                    await discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null,
+                        EmbedBuilders.MarkCommentDeleted(existing));
+                commentMap.Remove(commentId);
+            }
             return true;
         }
 
         if (action == "edited")
         {
+            var entry = commentMap.Get(commentId);
+            if (entry == null) return false;
             await discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null, embed);
             return true;
         }
