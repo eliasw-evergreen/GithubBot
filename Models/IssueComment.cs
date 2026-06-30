@@ -12,4 +12,5 @@ public class IssueComment
     [JsonPropertyName("path")] public string? Path { get; set; }
     [JsonPropertyName("line")] public int? Line { get; set; }
     [JsonPropertyName("original_line")] public int? OriginalLine { get; set; }
+    [JsonPropertyName("in_reply_to_id")] public long? InReplyToId { get; set; }
 }

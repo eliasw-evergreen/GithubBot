@@ -258,18 +258,7 @@ public class AdoWorkItemHandler
         var stored = _workItemMap.Get(wi.Id);
         if (stored != null)
         {
-            var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
-                : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
-            var createdBy = string.IsNullOrEmpty(wi.CreatedByEmail) ? null
-                : _userMap.AdoToDiscord(wi.CreatedByEmail) is string cbd ? $"<@{cbd}>" : wi.CreatedByEmail;
-            var desc = string.IsNullOrWhiteSpace(wi.Description) ? null
-                : StripHtml(wi.Description) is { Length: > 0 } d ? (d.Length > 300 ? d[..300] + "…" : d) : null;
-            var reproSteps = string.IsNullOrWhiteSpace(wi.ReproSteps) ? null
-                : StripHtml(wi.ReproSteps) is { Length: > 0 } rs ? (rs.Length > 500 ? rs[..497] + "…" : rs) : null;
-            var expected = string.IsNullOrWhiteSpace(wi.ExpectedOutcome) ? null
-                : StripHtml(wi.ExpectedOutcome) is { Length: > 0 } eo ? (eo.Length > 500 ? eo[..497] + "…" : eo) : null;
-            var actual = string.IsNullOrWhiteSpace(wi.ActualOutcome) ? null
-                : StripHtml(wi.ActualOutcome) is { Length: > 0 } ao ? (ao.Length > 500 ? ao[..497] + "…" : ao) : null;
+            var (assignedTo, createdBy, desc, reproSteps, expected, actual) = PrepareEmbedFields(wi);
             await _discord.PatchWorkItemEmbedAsync(channelId, stored.MessageId,
                 wi.Color, wi.State, wi.AreaPath, assignedTo, createdBy, desc, reproSteps, expected, actual);
 
@@ -561,18 +550,7 @@ public class AdoWorkItemHandler
         {
             if (existing.MessageId != 0)
             {
-                var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
-                    : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
-                var createdBy = string.IsNullOrEmpty(wi.CreatedByEmail) ? null
-                    : _userMap.AdoToDiscord(wi.CreatedByEmail) is string cbd ? $"<@{cbd}>" : wi.CreatedByEmail;
-                var desc = string.IsNullOrWhiteSpace(wi.Description) ? null
-                    : StripHtml(wi.Description) is { Length: > 0 } d ? (d.Length > 300 ? d[..300] + "…" : d) : null;
-                var reproSteps = string.IsNullOrWhiteSpace(wi.ReproSteps) ? null
-                    : StripHtml(wi.ReproSteps) is { Length: > 0 } rs ? (rs.Length > 500 ? rs[..497] + "…" : rs) : null;
-                var expected = string.IsNullOrWhiteSpace(wi.ExpectedOutcome) ? null
-                    : StripHtml(wi.ExpectedOutcome) is { Length: > 0 } eo ? (eo.Length > 500 ? eo[..497] + "…" : eo) : null;
-                var actual = string.IsNullOrWhiteSpace(wi.ActualOutcome) ? null
-                    : StripHtml(wi.ActualOutcome) is { Length: > 0 } ao ? (ao.Length > 500 ? ao[..497] + "…" : ao) : null;
+                var (assignedTo, createdBy, desc, reproSteps, expected, actual) = PrepareEmbedFields(wi);
                 await _discord.PatchWorkItemEmbedAsync(channelId, existing.MessageId,
                     color, wi.State, wi.AreaPath, assignedTo, createdBy, desc, reproSteps, expected, actual);
                 existing.Title           = wi.Title;
@@ -856,6 +834,27 @@ public class AdoWorkItemHandler
         var match = Regex.Match(s, @"^(.+?)\s*<([^>]+)>$");
         if (!match.Success) return;
         _userMap.RegisterAdoDisplayName(match.Groups[1].Value, match.Groups[2].Value);
+    }
+
+    private string? CleanField(string? raw, int max)
+        => string.IsNullOrWhiteSpace(raw) ? null
+            : StripHtml(raw) is { Length: > 0 } s
+                ? (s.Length > max ? s[..max] + "…" : s)
+                : null;
+
+    private (string? assignedTo, string? createdBy, string? desc,
+             string? reproSteps, string? expected, string? actual)
+        PrepareEmbedFields(WorkItemInfo wi)
+    {
+        var assignedTo = string.IsNullOrEmpty(wi.AssignedToEmail) ? null
+            : wi.AssignedToDiscord != null ? $"<@{wi.AssignedToDiscord}>" : wi.AssignedToEmail;
+        var createdBy = string.IsNullOrEmpty(wi.CreatedByEmail) ? null
+            : _userMap.AdoToDiscord(wi.CreatedByEmail) is string cbd ? $"<@{cbd}>" : wi.CreatedByEmail;
+        return (assignedTo, createdBy,
+                CleanField(wi.Description, 300),
+                CleanField(wi.ReproSteps, 500),
+                CleanField(wi.ExpectedOutcome, 500),
+                CleanField(wi.ActualOutcome, 500));
     }
 
     private static string StripHtml(string? s)

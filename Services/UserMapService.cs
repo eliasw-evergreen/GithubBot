@@ -116,6 +116,19 @@ public class UserMapService
         Save(map);
     }
 
+    // Returns distinct "<@discordId>" pings for all @GitHub mentions in text that have a mapping
+    public List<string> ExtractDiscordPings(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return [];
+        var pings = new List<string>();
+        foreach (Match m in Regex.Matches(text, @"@([a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?)"))
+        {
+            var id = GitHubToDiscord(m.Groups[1].Value);
+            if (id != null && !pings.Contains($"<@{id}>")) pings.Add($"<@{id}>");
+        }
+        return pings;
+    }
+
     // Returns distinct Discord IDs for all @mentions in text that have a mapping
     public IEnumerable<string> DiscordIdsFromMentions(string? text)
     {

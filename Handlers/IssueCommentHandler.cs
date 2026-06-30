@@ -67,33 +67,11 @@ public class IssueCommentHandler : IGitHubEventHandler
         var target = await _discord.ResolveOrCreatePrThreadAsync(channel, stored, _prMap, pr.NodeId, pr.Number, pr.Title, prHtmlUrl, ct);
         var commentReaction = _prefs.ResolveReaction("comment", _config["Reactions:Comment"]);
 
-        if (action == "deleted")
-        {
-            var entry = _commentMap.Get(comment.Id);
-            if (entry != null)
-            {
-                var original = await _discord.GetMessageAsync(entry.ChannelId, entry.MessageId);
-                if (original?.Embeds.FirstOrDefault() is IEmbed existingEmbed)
-                    await _discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null,
-                        EmbedBuilders.MarkCommentDeleted(existingEmbed));
-                _commentMap.Remove(comment.Id);
-            }
-            return;
-        }
-
         var embed = EmbedBuilders.CommentEmbed(comment, pr, repo, false, _userMap, commentReaction);
-        var mentionedPings = ExtractGithubMentions(comment.Body);
+        if (await CommentHandlerHelper.HandleCommentDeleteOrEdit(action, comment.Id, embed, _discord, _commentMap))
+            return;
 
-        if (action == "edited")
-        {
-            var entry = _commentMap.Get(comment.Id);
-            if (entry != null)
-            {
-                await _discord.EditMessageAsync(entry.ChannelId, entry.MessageId, null, embed);
-                return;
-            }
-            // Fall through to post as new if we don't have a record
-        }
+        var mentionedPings = _userMap.ExtractDiscordPings(comment.Body);
 
         var msg = await _discord.SendMessageAsync(target.Id, string.Join(' ', mentionedPings), embed, ct);
         if (msg != null)
@@ -112,21 +90,4 @@ public class IssueCommentHandler : IGitHubEventHandler
             await _discord.AddReactionAsync(channel.Id, storedForReaction.MessageId, commentReaction, ct);
     }
 
-    private List<string> ExtractGithubMentions(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return [];
-        var pings = new List<string>();
-        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"@([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)");
-        foreach (System.Text.RegularExpressions.Match match in matches)
-        {
-            var discordId = _userMap.GitHubToDiscord(match.Groups[1].Value);
-            if (discordId != null)
-            {
-                var ping = $"<@{discordId}>";
-                if (!pings.Contains(ping))
-                    pings.Add(ping);
-            }
-        }
-        return pings;
-    }
 }

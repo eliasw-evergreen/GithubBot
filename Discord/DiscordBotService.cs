@@ -423,14 +423,19 @@ public class DiscordBotService : IHostedService
         return channel;
     }
 
-    public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed? embed, CancellationToken ct = default)
+    public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed? embed, CancellationToken ct = default, ulong? replyToMessageId = null)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return null;
 
+        var reference = replyToMessageId.HasValue
+            ? new MessageReference(replyToMessageId.Value)
+            : null;
+
         return await channel.SendMessageAsync(
             string.IsNullOrEmpty(content) ? null : content,
-            embed: embed);
+            embed: embed,
+            messageReference: reference);
     }
 
     public async Task EditMessageAsync(ulong channelId, ulong messageId, string? newContent, Embed embed)
