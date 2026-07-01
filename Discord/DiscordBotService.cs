@@ -16,6 +16,8 @@ public class DiscordBotService : IHostedService
     private readonly PrSummaryService? _summary;
     private readonly SlashCommandHandler _slashHandler;
     private readonly ILogger<DiscordBotService> _logger;
+    private readonly WorkHoursService? _workHours;
+    private readonly DeferredPingService? _deferred;
 
     public DiscordBotService(
         DiscordSocketClient client,
@@ -25,6 +27,8 @@ public class DiscordBotService : IHostedService
         PrMapService prMap,
         SlashCommandHandler slashHandler,
         ILogger<DiscordBotService> logger,
+        WorkHoursService? workHours = null,
+        DeferredPingService? deferred = null,
         GitHubApiService? gitHub = null,
         PrSummaryService? summary = null)
     {
@@ -37,6 +41,8 @@ public class DiscordBotService : IHostedService
         _summary = summary;
         _slashHandler = slashHandler;
         _logger = logger;
+        _workHours = workHours;
+        _deferred = deferred;
 
         _client.Log += msg =>
         {
@@ -423,17 +429,39 @@ public class DiscordBotService : IHostedService
         return channel;
     }
 
-    public async Task<IUserMessage?> SendMessageAsync(ulong channelId, string? content, Embed? embed, CancellationToken ct = default, ulong? replyToMessageId = null)
+    private static readonly System.Text.RegularExpressions.Regex _mentionRegex =
+        new(@"<@[^>]+>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public async Task<IUserMessage?> SendMessageAsync(
+        ulong channelId, string? content, Embed? embed,
+        CancellationToken ct = default, ulong? replyToMessageId = null,
+        string? pingLabel = null, string? immediateContent = null)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return null;
+
+        string? finalContent;
+        if (!string.IsNullOrEmpty(content) && content.Contains("<@")
+            && _workHours != null && _deferred != null && !_workHours.IsWorkTime())
+        {
+            var pings = _mentionRegex.Matches(content).Select(m => m.Value).Distinct().ToList();
+            var label = pingLabel ?? embed?.Title ?? "notification";
+            _deferred.Defer(channelId, pings, label);
+            finalContent = string.IsNullOrEmpty(immediateContent) ? null : immediateContent;
+        }
+        else
+        {
+            finalContent = string.IsNullOrEmpty(immediateContent)
+                ? content
+                : string.IsNullOrEmpty(content) ? immediateContent : $"{content} {immediateContent}";
+        }
 
         var reference = replyToMessageId.HasValue
             ? new MessageReference(replyToMessageId.Value)
             : null;
 
         return await channel.SendMessageAsync(
-            string.IsNullOrEmpty(content) ? null : content,
+            string.IsNullOrEmpty(finalContent) ? null : finalContent,
             embed: embed,
             messageReference: reference);
     }

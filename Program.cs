@@ -65,6 +65,10 @@ var envMap = new Dictionary<string, string?>
     ["GitHub:Repos"]              = Env.GetString("GITHUB_REPOS"),
     ["OpenRouter:ApiKey"]         = Env.GetString("OPENROUTER_API_KEY"),
     ["OpenRouter:Model"]          = Env.GetString("OPENROUTER_MODEL"),
+    ["WorkHours:Start"]           = Env.GetString("WORK_HOURS_START"),
+    ["WorkHours:End"]             = Env.GetString("WORK_HOURS_END"),
+    ["WorkHours:Timezone"]        = Env.GetString("WORK_HOURS_TIMEZONE"),
+    ["WorkHours:Days"]            = Env.GetString("WORK_HOURS_DAYS"),
 };
 
 builder.Configuration
@@ -87,6 +91,9 @@ builder.Services.AddSingleton(sp => new ScoreService(Path.Combine(dataPath, "sco
 builder.Services.AddSingleton(new RouletteService(Path.Combine(dataPath, "roulette.json")));
 builder.Services.AddSingleton(new WorkItemMapService(Path.Combine(dataPath, "workitemmap.json")));
 builder.Services.AddSingleton<ConfigUiTokenService>();
+builder.Services.AddSingleton(new DeferredPingService(Path.Combine(dataPath, "deferredpings.json")));
+builder.Services.AddSingleton<WorkHoursService>();
+builder.Services.AddHostedService<DeferredPingWorker>();
 builder.Services.AddSingleton<GithubBot.Handlers.AdoWorkItemHandler>();
 
 var adoOrgUrl = builder.Configuration["AzureDevOps:OrgUrl"];

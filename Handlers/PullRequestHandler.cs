@@ -165,16 +165,21 @@ public class PullRequestHandler : IGitHubEventHandler
             if (action == "ready_for_review" && stored.ThreadId is ulong rfrThreadId && rfrThreadId != 0)
             {
                 var rfrRolePing = _prefs.ResolvePingRole(_config["Roles:PrPing"]);
-                var rfrPing = !string.IsNullOrEmpty(rfrRolePing) ? $"<@&{rfrRolePing}> " : "";
+                var rfrPing = !string.IsNullOrEmpty(rfrRolePing) ? $"<@&{rfrRolePing}>" : null;
                 var rfrAuthor = _userMap.GitHubToDiscord(pr.User.Login) is string rfrDid ? $"<@{rfrDid}>" : $"**{pr.User.Login}**";
-                await _discord.SendMessageAsync(rfrThreadId,
-                    $"{rfrPing}PR #{pr.Number} by {rfrAuthor} is ready for review.", null, ct);
+                await _discord.SendMessageAsync(rfrThreadId, rfrPing, null, ct,
+                    pingLabel: $"PR #{pr.Number} ready for review",
+                    immediateContent: $"PR #{pr.Number} by {rfrAuthor} is ready for review.");
             }
 
             return;
         }
 
-        var msg = await _discord.SendMessageAsync(channel.Id, $"{rolePrefix}{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**", embed, ct);
+        var msg = await _discord.SendMessageAsync(channel.Id,
+            string.IsNullOrEmpty(rolePrefix) ? null : rolePrefix.Trim(),
+            embed, ct,
+            pingLabel: $"PR #{pr.Number} opened",
+            immediateContent: $"{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**");
         if (msg != null)
         {
             AwardPrPoints(pr, ScoreCategory.PrOpened);

@@ -100,7 +100,12 @@ public static class ConfigUiEndpoints
             foreach (var key in new[] { "PrOpened","PrMerged","Review","Comment","TicketCreated","TicketBug","TicketStory","TicketComment" })
                 if (prefs.GetPointValue(key) is int pv) pointValues[key] = pv;
 
-            var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines(), pointValues);
+            var workHours = prefs.ResolveWorkHours(config);
+            var workHoursSource = (prefs.GetWorkHoursStart() ?? prefs.GetWorkHoursEnd() ?? prefs.GetWorkHoursTimezone() ?? prefs.GetWorkHoursDays()) != null
+                ? "prefs"
+                : (config["WorkHours:Start"] != null || config["WorkHours:End"] != null ? ".env" : "unset");
+
+            var html = ConfigUiHtml.Render(guildUsers, roles, map, reactions, textChannels, channelConfigs, currentPingRole, pingRoleSource, allScores, rouletteExclusions, currentConfigRole, configRoleSource, currentCommandRole, commandRoleSource, prefs.GetPrDescMaxLines(), pointValues, workHours, workHoursSource);
             context.Response.Headers.CacheControl = "no-store";
             return Results.Content(html, "text/html");
         });
@@ -357,6 +362,51 @@ public static class ConfigUiEndpoints
             var excluded  = form["excluded"].FirstOrDefault() == "1";
             if (!string.IsNullOrEmpty(discordId))
                 prefs.SetRouletteExclusion(discordId, excluded);
+            return Results.Redirect("/config/ui");
+        });
+
+        app.MapPost("/config/ui/setworkhours", async (HttpContext context, PreferencesService prefs) =>
+        {
+            if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+            var form  = await context.Request.ReadFormAsync();
+            var field = form["field"].FirstOrDefault()?.Trim();
+            var value = form["value"].FirstOrDefault()?.Trim();
+            if (string.IsNullOrEmpty(value)) return Results.Redirect("/config/ui");
+            switch (field)
+            {
+                case "start":    prefs.SetWorkHoursStart(value);    break;
+                case "end":      prefs.SetWorkHoursEnd(value);      break;
+                case "timezone": prefs.SetWorkHoursTimezone(value); break;
+                case "days":     prefs.SetWorkHoursDays(value);     break;
+            }
+            return Results.Redirect("/config/ui");
+        });
+
+        app.MapPost("/config/ui/setworkdays", async (HttpContext context, PreferencesService prefs) =>
+        {
+            if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+            var form = await context.Request.ReadFormAsync();
+            var days = form["day"].Where(d => !string.IsNullOrEmpty(d)).ToList();
+            prefs.SetWorkHoursDays(days.Count > 0 ? string.Join(",", days) : "");
+            return Results.Redirect("/config/ui");
+        });
+
+        app.MapPost("/config/ui/clearworkhours", async (HttpContext context, PreferencesService prefs) =>
+        {
+            if (context.Session.GetString("auth") != "1") return Results.Text("Unauthorized.", statusCode: 401);
+            var form  = await context.Request.ReadFormAsync();
+            var field = form["field"].FirstOrDefault()?.Trim();
+            switch (field)
+            {
+                case "start":    prefs.ClearWorkHoursStart();    break;
+                case "end":      prefs.ClearWorkHoursEnd();      break;
+                case "timezone": prefs.ClearWorkHoursTimezone(); break;
+                case "days":     prefs.ClearWorkHoursDays();     break;
+                default: // clear all
+                    prefs.ClearWorkHoursStart(); prefs.ClearWorkHoursEnd();
+                    prefs.ClearWorkHoursTimezone(); prefs.ClearWorkHoursDays();
+                    break;
+            }
             return Results.Redirect("/config/ui");
         });
     }

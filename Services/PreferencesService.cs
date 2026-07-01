@@ -136,6 +136,30 @@ public class PreferencesService
     private static string StripDigits(string value)
         => new string(value.Where(char.IsDigit).ToArray());
 
+    // ── Work hours ────────────────────────────────────────────────────────────
+
+    public string? GetWorkHoursStart() => _data.WorkHoursStart;
+    public void SetWorkHoursStart(string v) { _data.WorkHoursStart = v; Save(); }
+    public void ClearWorkHoursStart() { _data.WorkHoursStart = null; Save(); }
+
+    public string? GetWorkHoursEnd() => _data.WorkHoursEnd;
+    public void SetWorkHoursEnd(string v) { _data.WorkHoursEnd = v; Save(); }
+    public void ClearWorkHoursEnd() { _data.WorkHoursEnd = null; Save(); }
+
+    public string? GetWorkHoursTimezone() => _data.WorkHoursTimezone;
+    public void SetWorkHoursTimezone(string v) { _data.WorkHoursTimezone = v; Save(); }
+    public void ClearWorkHoursTimezone() { _data.WorkHoursTimezone = null; Save(); }
+
+    public string? GetWorkHoursDays() => _data.WorkHoursDays;
+    public void SetWorkHoursDays(string v) { _data.WorkHoursDays = v; Save(); }
+    public void ClearWorkHoursDays() { _data.WorkHoursDays = null; Save(); }
+
+    public WorkHoursConfig ResolveWorkHours(IConfiguration config) => new(
+        Start:    _data.WorkHoursStart    ?? config["WorkHours:Start"],
+        End:      _data.WorkHoursEnd      ?? config["WorkHours:End"],
+        Timezone: _data.WorkHoursTimezone ?? config["WorkHours:Timezone"],
+        Days:     _data.WorkHoursDays     ?? config["WorkHours:Days"]);
+
     private class PreferencesData
     {
         public Dictionary<string, string> Reactions { get; set; } = [];
@@ -147,5 +171,11 @@ public class PreferencesService
         public string? CommandRole { get; set; }
         public int? PrDescMaxLines { get; set; }
         public Dictionary<string, int> PointValues { get; set; } = [];
+        public string? WorkHoursStart    { get; set; }
+        public string? WorkHoursEnd      { get; set; }
+        public string? WorkHoursTimezone { get; set; }
+        public string? WorkHoursDays     { get; set; }
     }
 }
+
+public record WorkHoursConfig(string? Start, string? End, string? Timezone, string? Days);

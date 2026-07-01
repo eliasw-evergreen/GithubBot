@@ -27,7 +27,9 @@ public static class ConfigUiHtml
         string? currentCommandRole,
         string commandRoleSource,
         int? prDescMaxLines,
-        IReadOnlyDictionary<string, int> pointValues)
+        IReadOnlyDictionary<string, int> pointValues,
+        WorkHoursConfig workHours,
+        string workHoursSource)
     {
         var sb = new StringBuilder();
         sb.Append("""
@@ -198,6 +200,48 @@ public static class ConfigUiHtml
             """);
         if (prDescMaxLines.HasValue)
             sb.Append("""<form method="post" action="/config/ui/clearprdescmaxlines"><button type="submit" class="btn-sm">Clear override</button></form>""");
+        sb.Append("</td></tr>");
+
+        sb.Append("</tbody></table>");
+
+        // ── Work Hours ───────────────────────────────────────────────────────
+        sb.Append("<h2>Work Hours</h2>");
+        sb.Append("<p style='font-size:.85rem;color:#888;margin-bottom:.8rem;'>Outside work hours, pings are deferred and sent as a single batch at the start of the next work period. Leave unset to disable deferral.</p>");
+        sb.Append("<table><thead><tr><th>Setting</th><th>Current</th><th>Set</th><th></th></tr></thead><tbody>");
+
+        void WorkHoursRow(string label, string fieldName, string? value, string placeholder)
+        {
+            var display = string.IsNullOrEmpty(value) ? "<span class=\"no-entries\">unset</span>"
+                : $"<code>{Esc(value)}</code>";
+            sb.Append($"<tr><td>{label}</td><td>{display}<span class=\"src\">[{(string.IsNullOrEmpty(value) ? "unset" : workHoursSource)}]</span></td><td>");
+            sb.Append($"""
+                <form method="post" action="/config/ui/setworkhours" class="f">
+                <input type="hidden" name="field" value="{fieldName}">
+                <input type="text" name="value" placeholder="{placeholder}" value="{Esc(value ?? "")}" style="width:180px">
+                <button type="submit" class="btn">Set</button></form>
+                """);
+            sb.Append("</td><td>");
+            if (workHoursSource == "prefs" && !string.IsNullOrEmpty(value))
+                sb.Append($"""<form method="post" action="/config/ui/clearworkhours"><input type="hidden" name="field" value="{fieldName}"><button type="submit" class="btn-sm">Clear</button></form>""");
+            sb.Append("</td></tr>");
+        }
+
+        WorkHoursRow("Start Time", "start",    workHours.Start,    "09:00");
+        WorkHoursRow("End Time",   "end",      workHours.End,      "17:00");
+        WorkHoursRow("Timezone",   "timezone", workHours.Timezone, "Europe/Stockholm");
+
+        // Days checkboxes row
+        var activeDays = (workHours.Days ?? "1,2,3,4,5").Split(',').Select(d => d.Trim()).ToHashSet();
+        var dayNames = new[] { ("1","Mon"), ("2","Tue"), ("3","Wed"), ("4","Thu"), ("5","Fri"), ("6","Sat"), ("7","Sun") };
+        sb.Append("<tr><td>Work Days</td><td>");
+        sb.Append(string.Join(", ", dayNames.Where(d => activeDays.Contains(d.Item1)).Select(d => d.Item2)));
+        sb.Append($"<span class=\"src\">[{workHoursSource}]</span></td><td>");
+        sb.Append("""<form method="post" action="/config/ui/setworkdays" class="f" style="flex-wrap:wrap;gap:.4rem;">""");
+        foreach (var (iso, name) in dayNames)
+            sb.Append($"""<label><input type="checkbox" name="day" value="{iso}"{(activeDays.Contains(iso) ? " checked" : "")}> {name}</label>""");
+        sb.Append("""<button type="submit" class="btn">Set</button></form></td><td>""");
+        if (workHoursSource == "prefs" && workHours.Days != null)
+            sb.Append("""<form method="post" action="/config/ui/clearworkhours"><input type="hidden" name="field" value="days"><button type="submit" class="btn-sm">Clear</button></form>""");
         sb.Append("</td></tr>");
 
         sb.Append("</tbody></table>");
