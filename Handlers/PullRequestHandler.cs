@@ -315,5 +315,14 @@ public class PullRequestHandler : IGitHubEventHandler
         var content = originalMsg.Content;
         if (!content.StartsWith("[Closed]") && !content.StartsWith("[Merged]"))
             await _discord.EditMessageAsync(channel.Id, stored.MessageId, null, embed);
+
+        // Rename thread if title changed
+        if (stored.ThreadId is ulong threadId && threadId != 0
+            && stored.PrTitle != pr.Title)
+        {
+            await _discord.RenameThreadAsync(threadId, $"PR #{pr.Number} — {pr.Title}", ct);
+            stored.PrTitle = pr.Title;
+            _prMap.Set(pr.NodeId, stored);
+        }
     }
 }

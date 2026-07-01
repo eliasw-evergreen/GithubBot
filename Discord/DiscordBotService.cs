@@ -582,6 +582,21 @@ public class DiscordBotService : IHostedService
         return thread.Id;
     }
 
+    public async Task RenameThreadAsync(ulong threadId, string name, CancellationToken ct = default)
+    {
+        try
+        {
+            var thread = _client.GetChannel(threadId) as IThreadChannel;
+            if (thread == null) return;
+            var truncated = name.Length > 100 ? name[..100] : name;
+            await thread.ModifyAsync(props => props.Name = truncated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to rename thread {ThreadId}", threadId);
+        }
+    }
+
     public async Task ArchiveThreadAsync(ulong threadId, CancellationToken ct = default)
     {
         var thread = _client.GetChannel(threadId) as IThreadChannel;
