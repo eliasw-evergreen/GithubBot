@@ -489,21 +489,27 @@ public class AdoWorkItemHandler
             if (fetched.Count > 0)
             {
                 var item = fetched[0];
-                var assignedEmail = ExtractEmail(item.AssignedTo);
+                var assignedEmail  = ExtractEmail(item.AssignedTo);
+                var createdByEmail = ExtractEmail(item.CreatedBy);
                 embedWi = wi with
                 {
-                    Title          = item.Title ?? wi.Title,
-                    WorkItemType   = item.WorkItemType ?? wi.WorkItemType,
-                    State          = item.State,
-                    AreaPath       = item.AreaPath,
+                    Title             = item.Title ?? wi.Title,
+                    WorkItemType      = item.WorkItemType ?? wi.WorkItemType,
+                    State             = item.State,
+                    AreaPath          = item.AreaPath,
                     AssignedToEmail   = assignedEmail,
                     AssignedToDiscord = !string.IsNullOrEmpty(assignedEmail) ? _userMap.AdoToDiscord(assignedEmail) : null,
-                    Url            = _adoApi.BuildWorkItemUrl(wi.Id),
+                    CreatedByEmail    = createdByEmail,
+                    Description       = item.Description,
+                    ReproSteps        = item.ReproSteps,
+                    ExpectedOutcome   = item.ExpectedOutcome,
+                    ActualOutcome     = item.ActualOutcome,
+                    Url               = _adoApi.BuildWorkItemUrl(wi.Id),
                 };
             }
         }
-        var embedBuilder = BuildBaseEmbed(embedWi, embedWi.Color);
-        AddStandardFields(embedBuilder, embedWi, showDescription: false);
+        var embedBuilder = BuildBaseEmbed(embedWi, StateColor(embedWi.State));
+        AddStandardFields(embedBuilder, embedWi, showDescription: true);
         initialEmbed = embedBuilder.Build();
 
         var stub = await _discord.SendMessageAsync(channelId, null, initialEmbed, ct);
@@ -781,7 +787,7 @@ public class AdoWorkItemHandler
         _            => (Color.Default, "📋"),
     };
 
-    private static Color StateColor(string? state) => state?.ToLowerInvariant() switch
+    private static Color StateColor(string? state) => (state ?? "to do").ToLowerInvariant() switch
     {
         "to do"   or "todo"   => Color.LightGrey,
         "doing"   or "active" or "in progress" => new Color(0x5865F2u),
