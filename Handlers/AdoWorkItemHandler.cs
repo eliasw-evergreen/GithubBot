@@ -166,7 +166,7 @@ public class AdoWorkItemHandler
         {
             "System.Rev", "System.RevisedDate", "System.ChangedDate", "System.Watermark",
             "System.History", "System.CommentCount", "System.AuthorizedDate", "System.AuthorizedAs",
-            "System.PersonId",
+            "System.PersonId", "System.ChangedBy",
             "Microsoft.VSTS.Common.StateChangeDate", "Microsoft.VSTS.Common.AuthorizedDate",
         };
 
@@ -229,11 +229,6 @@ public class AdoWorkItemHandler
         foreach (var (label, value) in fieldLines)
             embed.AddField(label, value.Length > 1024 ? value[..1021] + "…" : value, inline: true);
 
-        if (!string.IsNullOrWhiteSpace(wi.ChangedByEmail))
-        {
-            var d = _userMap.AdoToDiscord(wi.ChangedByEmail);
-            embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
-        }
 
         // Ping assignee if AssignedTo changed to a different (non-empty) person
         string? ping = null;
