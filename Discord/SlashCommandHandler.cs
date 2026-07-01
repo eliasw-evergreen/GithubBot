@@ -20,6 +20,7 @@ public class SlashCommandHandler
     private readonly AdoApiService? _adoApi;
     private readonly GitHubApiService? _gitHub;
     private readonly PrSummaryService? _summary;
+    private readonly TriageService? _triage;
     private readonly IServiceProvider _services;
     private readonly IConfiguration _config;
     private readonly ILogger<SlashCommandHandler> _logger;
@@ -40,7 +41,8 @@ public class SlashCommandHandler
         ILogger<SlashCommandHandler> logger,
         AdoApiService? adoApi = null,
         GitHubApiService? gitHub = null,
-        PrSummaryService? summary = null)
+        PrSummaryService? summary = null,
+        TriageService? triage = null)
     {
         _client = client;
         _userMap = userMap;
@@ -54,6 +56,7 @@ public class SlashCommandHandler
         _adoApi = adoApi;
         _gitHub = gitHub;
         _summary = summary;
+        _triage = triage;
         _config = config;
         _logger = logger;
         _noAuth = config.GetValue<bool>("NoAuth");
@@ -61,7 +64,7 @@ public class SlashCommandHandler
     }
 
     // Bump this whenever the command definitions change.
-    private const string CommandsVersion = "v26";
+    private const string CommandsVersion = "v27";
     private int _registering = 0;
 
     public async Task RegisterAsync()
@@ -209,6 +212,13 @@ public class SlashCommandHandler
                                   new ApplicationCommandOptionChoiceProperties { Name = "DevOps", Value = "ado" }])
                     .AddOption("user", ApplicationCommandOptionType.User, "Discord user to map (defaults to yourself)", isRequired: false)
                     .Build(),
+
+                new SlashCommandBuilder()
+                    .WithName("triage")
+                    .WithDescription("AI-triage ADO tickets: sets Priority, Severity, and Estimated size")
+                    .AddOption("ids", ApplicationCommandOptionType.String,
+                        "Work item ID(s), space or comma separated", isRequired: true)
+                    .Build(),
             };
 
             await rest.BulkOverwriteGuildCommands(commands, guildId,
@@ -309,6 +319,9 @@ public class SlashCommandHandler
                 break;
             case "untrackticket":
                 await HandleUntrackTicket(command);
+                break;
+            case "triage":
+                await HandleTriage(command);
                 break;
         }
     }
@@ -500,7 +513,8 @@ public class SlashCommandHandler
             .AddField("Tickets",
                 "`/trackticket` — Manually track an existing ADO work item\n" +
                 "`/untrackticket` — Stop tracking a ticket, delete embed and archive thread\n" +
-                "`/unassigned` — List ADO tickets with no assignee")
+                "`/unassigned` — List ADO tickets with no assignee\n" +
+                "`/triage <ids>` — AI-set Priority, Severity, and Estimated size on ADO tickets")
             .AddField("Scores",
                 "`/score [user]` — Show your score and stats, or another user's\n" +
                 "`/leaderboard` — Show the top scorers\n" +
@@ -1296,6 +1310,104 @@ public class SlashCommandHandler
             .Build();
 
         await command.ModifyOriginalResponseAsync(m => { m.Content = ""; m.Embed = embed; });
+    }
+
+    private async Task HandleTriage(SocketSlashCommand command)
+    {
+        await command.DeferAsync(ephemeral: true);
+
+        if (_triage == null || _adoApi == null)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "OpenRouter or ADO API is not configured — cannot triage.");
+            return;
+        }
+
+        var raw = command.Data.Options.FirstOrDefault(o => o.Name == "ids")?.Value as string ?? "";
+        var idStrs = raw.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries);
+        var ids = idStrs.Select(s => int.TryParse(s.Trim(), out var n) ? n : 0).Where(n => n > 0).Distinct().ToList();
+
+        if (ids.Count == 0)
+        {
+            await command.ModifyOriginalResponseAsync(m => m.Content = "No valid work item IDs provided.");
+            return;
+        }
+
+        var items = await _adoApi.GetWorkItemsAsync(ids);
+        var lines = new List<string>();
+
+        foreach (var id in ids)
+        {
+            var item = items.FirstOrDefault(i => i.Id == id);
+            if (item == null)
+            {
+                lines.Add($"**#{id}** — not found in ADO");
+                continue;
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+
+            var (status, result) = await _triage.TriageAsync(
+                item.Title, item.WorkItemType,
+                item.Description, item.ReproSteps,
+                item.ExpectedOutcome, item.ActualOutcome,
+                cts.Token);
+
+            if (status != TriageService.TriageStatus.Ok || result == null)
+            {
+                lines.Add($"**#{id}** — AI triage failed");
+                continue;
+            }
+
+            var ok = await _adoApi.PatchWorkItemAsync(id, result.Priority, result.Severity, result.EstimatedSize);
+            if (ok)
+                lines.Add($"**#{id}** ✅ Set: Prio {result.Priority} · {TriageService.SeverityShort(result.Severity)} · {result.EstimatedSize}");
+            else
+                lines.Add($"**#{id}** ❌ Triage complete but PATCH failed (check ADO PAT write scope)");
+        }
+
+        var body = string.Join("\n", lines);
+        if (body.Length > 1900) body = body[..1900] + "\n…";
+        await command.ModifyOriginalResponseAsync(m => m.Content = body);
+    }
+
+    public async Task HandleButtonAsync(SocketMessageComponent component)
+    {
+        var customId = component.Data.CustomId;
+        if (!customId.StartsWith("triage|")) return;
+
+        var parts = customId.Split('|');
+        if (parts.Length != 5 || !int.TryParse(parts[1], out var workItemId) ||
+            !int.TryParse(parts[2], out var priority))
+        {
+            await component.RespondAsync("Invalid triage button data.", ephemeral: true);
+            return;
+        }
+        var severity = parts[3];
+        var estimatedSize = parts[4];
+
+        await component.DeferAsync(ephemeral: true);
+
+        if (_adoApi == null)
+        {
+            await component.FollowupAsync("ADO API is not configured.", ephemeral: true);
+            return;
+        }
+
+        var ok = await _adoApi.PatchWorkItemAsync(workItemId, priority, severity, estimatedSize);
+
+        if (ok)
+        {
+            await component.Message.ModifyAsync(p => p.Components = new ComponentBuilder().Build());
+            await component.FollowupAsync(
+                $"✅ Applied: Prio {priority} · {TriageService.SeverityShort(severity)} · {estimatedSize}",
+                ephemeral: true);
+        }
+        else
+        {
+            await component.FollowupAsync(
+                "❌ PATCH failed — check that the ADO PAT has Work Items → Write scope.",
+                ephemeral: true);
+        }
     }
 
     private async Task HandleMapUser(SocketSlashCommand command)

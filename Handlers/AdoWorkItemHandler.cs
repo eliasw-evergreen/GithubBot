@@ -13,6 +13,7 @@ public class AdoWorkItemHandler
     private readonly WorkItemMapService _workItemMap;
     private readonly ScoreService _scores;
     private readonly AdoApiService? _adoApi;
+    private readonly TriageService? _triage;
     private readonly IConfiguration _config;
     private readonly ILogger<AdoWorkItemHandler> _logger;
 
@@ -26,13 +27,15 @@ public class AdoWorkItemHandler
         ScoreService scores,
         IConfiguration config,
         ILogger<AdoWorkItemHandler> logger,
-        AdoApiService? adoApi = null)
+        AdoApiService? adoApi = null,
+        TriageService? triage = null)
     {
         _discord = discord;
         _userMap = userMap;
         _workItemMap = workItemMap;
         _scores = scores;
         _adoApi = adoApi;
+        _triage = triage;
         _config = config;
         _logger = logger;
     }
@@ -68,7 +71,53 @@ public class AdoWorkItemHandler
         if (wi.AssignedToDiscord != null && wi.AssignedToDiscord != creatorDiscordId) pings.Add($"<@{wi.AssignedToDiscord}>");
         string? ping = pings.Count > 0 ? string.Join(" ", pings) : null;
 
-        var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct);
+        // Read current triage field values from the payload's revision.fields
+        MessageComponent? triageComponent = null;
+        if (_triage != null)
+        {
+            var resource = payload.GetProperty("resource");
+            var fields = resource.TryGetProperty("revision", out var rev) && rev.TryGetProperty("fields", out var rf)
+                ? rf : (resource.TryGetProperty("fields", out var f) ? f : default);
+
+            int currentPriority = fields.ValueKind != JsonValueKind.Undefined &&
+                fields.TryGetProperty("Microsoft.VSTS.Common.Priority", out var pEl) &&
+                pEl.ValueKind == JsonValueKind.Number ? pEl.GetInt32() : 0;
+            var currentSeverity  = Str(fields, "Microsoft.VSTS.Common.Severity") ?? "";
+            var currentEstSize   = Str(fields, "Custom.Estimatedsize") ?? "";
+
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(8));
+
+                var (status, result) = await _triage.TriageAsync(
+                    wi.Title, wi.WorkItemType, wi.Description, wi.ReproSteps,
+                    wi.ExpectedOutcome, wi.ActualOutcome, cts.Token);
+
+                if (status == TriageService.TriageStatus.Ok && result != null)
+                {
+                    var alreadyMatches =
+                        result.Priority == currentPriority &&
+                        string.Equals(result.Severity, currentSeverity, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(result.EstimatedSize, currentEstSize, StringComparison.OrdinalIgnoreCase);
+
+                    if (!alreadyMatches)
+                    {
+                        var label = $"🤖 Prio {result.Priority} · {TriageService.SeverityShort(result.Severity)} · {result.EstimatedSize}";
+                        var customId = $"triage|{wi.Id}|{result.Priority}|{result.Severity}|{result.EstimatedSize}";
+                        triageComponent = new ComponentBuilder()
+                            .WithButton(label, customId, ButtonStyle.Secondary)
+                            .Build();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[ADO] Triage failed for #{Id}, posting embed without button", wi.Id);
+            }
+        }
+
+        var msg = await _discord.SendMessageAsync(channelId, ping, embed.Build(), ct, components: triageComponent);
         if (msg != null)
         {
             var threadId = await _discord.CreateThreadAsync(channelId, msg.Id,

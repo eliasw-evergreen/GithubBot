@@ -261,6 +261,30 @@ public class AdoApiService
                 FlattenAreaNode(child, path, results);
     }
 
+    public async Task<bool> PatchWorkItemAsync(int id, int? priority, string? severity, string? estimatedSize, CancellationToken ct = default)
+    {
+        var ops = new List<object>();
+        if (priority.HasValue)
+            ops.Add(new { op = "add", path = "/fields/Microsoft.VSTS.Common.Priority", value = (object)priority.Value });
+        if (!string.IsNullOrEmpty(severity))
+            ops.Add(new { op = "add", path = "/fields/Microsoft.VSTS.Common.Severity", value = (object)severity });
+        if (!string.IsNullOrEmpty(estimatedSize))
+            ops.Add(new { op = "add", path = "/fields/Custom.Estimatedsize", value = (object)estimatedSize });
+
+        if (ops.Count == 0) return true;
+
+        var url = $"{_orgUrl}/{Uri.EscapeDataString(_project)}/_apis/wit/workitems/{id}?api-version=7.1";
+        var json = JsonSerializer.Serialize(ops);
+        var request = new HttpRequestMessage(new HttpMethod("PATCH"), url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json-patch+json")
+        };
+        var response = await _http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+            _logger.LogWarning("[ADO API] PatchWorkItem #{Id} failed: {Status}", id, response.StatusCode);
+        return response.IsSuccessStatusCode;
+    }
+
     public string BuildWorkItemUrl(int id)
         => $"{_orgUrl}/{Uri.EscapeDataString(_project)}/_workitems/edit/{id}";
 

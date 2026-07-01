@@ -53,6 +53,7 @@ public class DiscordBotService : IHostedService
         _client.Ready += OnReady;
         _client.InteractionCreated += _slashHandler.HandleInteractionAsync;
         _client.AutocompleteExecuted += _slashHandler.HandleAutocompleteAsync;
+        _client.ButtonExecuted += _slashHandler.HandleButtonAsync;
     }
 
     public DiscordSocketClient Client => _client;
@@ -435,7 +436,8 @@ public class DiscordBotService : IHostedService
     public async Task<IUserMessage?> SendMessageAsync(
         ulong channelId, string? content, Embed? embed,
         CancellationToken ct = default, ulong? replyToMessageId = null,
-        string? pingLabel = null, string? immediateContent = null)
+        string? pingLabel = null, string? immediateContent = null,
+        MessageComponent? components = null)
     {
         var channel = _client.GetChannel(channelId) as IMessageChannel;
         if (channel == null) return null;
@@ -463,7 +465,8 @@ public class DiscordBotService : IHostedService
         return await channel.SendMessageAsync(
             string.IsNullOrEmpty(finalContent) ? null : finalContent,
             embed: embed,
-            messageReference: reference);
+            messageReference: reference,
+            components: components);
     }
 
     public async Task EditMessageAsync(ulong channelId, ulong messageId, string? newContent, Embed embed)

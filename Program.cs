@@ -116,6 +116,8 @@ if (!string.IsNullOrEmpty(orApiKey) && !string.IsNullOrEmpty(orModel))
 {
     var orLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<PrSummaryService>();
     builder.Services.AddSingleton(new PrSummaryService(orApiKey, orModel, orLogger));
+    var triageLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<TriageService>();
+    builder.Services.AddSingleton(new TriageService(orApiKey, orModel, triageLogger));
 }
 
 builder.Services.AddDistributedMemoryCache();
