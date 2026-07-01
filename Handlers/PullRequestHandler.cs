@@ -179,7 +179,7 @@ public class PullRequestHandler : IGitHubEventHandler
             string.IsNullOrEmpty(rolePrefix) ? null : rolePrefix.Trim(),
             embed, ct,
             pingLabel: $"PR #{pr.Number} opened",
-            immediateContent: $"{mention} opened a PR in **[{repo.Name}]({repo.HtmlUrl})**");
+            immediateContent: mention);
         if (msg != null)
         {
             AwardPrPoints(pr, ScoreCategory.PrOpened);
