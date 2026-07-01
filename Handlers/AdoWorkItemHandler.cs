@@ -94,7 +94,8 @@ public class AdoWorkItemHandler
         var resource = payload.GetProperty("resource");
         var changedFields = resource.TryGetProperty("fields", out var cf) ? cf : default;
 
-        // Comment edits arrive as workitem.updated with System.History changed
+        // Comment edits arrive as workitem.updated with System.History changed.
+        // Version 1 means a new comment — skip here since workitem.commented handles it.
         if (changedFields.ValueKind == JsonValueKind.Object &&
             changedFields.TryGetProperty("System.History", out var historyDiff) &&
             historyDiff.TryGetProperty("newValue", out var historyNewEl) &&
@@ -114,6 +115,9 @@ public class AdoWorkItemHandler
                 if (cvr.TryGetProperty("commentId", out var cid)) commentId = cid.GetInt32();
                 if (cvr.TryGetProperty("version", out var ver)) commentVersion = ver.GetInt32();
             }
+
+            // New comment (version 1) — workitem.commented fires separately, don't duplicate
+            if (commentVersion <= 1) goto skipHistory;
 
             var editEmbed = new EmbedBuilder()
                 .WithTitle($"[#{wi.Id}] ✏️ Comment Edited on {TypeEmoji(wi.WorkItemType).emoji}{(wi.Title != null ? $": {wi.Title}" : "")}")
@@ -155,6 +159,7 @@ public class AdoWorkItemHandler
             }
             return;
         }
+        skipHistory:;
 
         // Fields that are always noise — changed by every event or carry no user-visible info
         var skipFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
