@@ -229,6 +229,11 @@ public class AdoWorkItemHandler
         foreach (var (label, value) in fieldLines)
             embed.AddField(label, value.Length > 1024 ? value[..1021] + "…" : value, inline: true);
 
+        if (!string.IsNullOrWhiteSpace(wi.ChangedByEmail))
+        {
+            var d = _userMap.AdoToDiscord(wi.ChangedByEmail);
+            embed.AddField("Changed By", d != null ? $"<@{d}>" : wi.ChangedByEmail, inline: true);
+        }
 
         // Ping assignee if AssignedTo changed to a different (non-empty) person
         string? ping = null;
